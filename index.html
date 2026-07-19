@@ -826,7 +826,7 @@ async function gerSetores(b){
   window._profs = allProfs||[];
   const cnt=(arr,pid)=>(arr||[]).filter(x=>x.profile_id===pid).length;
   const SET=['contabil','fiscal','pessoal','paralegal'];
-  let html=`<div class="section-head"><h3>Setores do escritório</h3></div>
+  let html=`<div class="section-head"><h3>Setores do escritório</h3><button class="btn btn-gold btn-sm" id="impWM">⬆ Importar do WorkMonitor</button></div>
     <div class="card-sub" style="margin:-8px 0 16px;color:var(--muted);font-size:13px">Abra um setor e clique no colaborador para ver e lançar performance, exigências e feedback dele.</div>`;
   SET.forEach(dep=>{
     const people=(allProfs||[]).filter(p=>p.departamento===dep);
@@ -841,7 +841,100 @@ async function gerSetores(b){
     html+=`</div>`;
   });
   b.innerHTML=html;
+  const wm=$('#impWM'); if(wm) wm.onclick=()=>importWMModal();
   b.querySelectorAll('[data-prof]').forEach(x=>x.onclick=()=>gerColabView(b,x.dataset.prof));
+}
+
+/* ---- Importador do WorkMonitor (Excel/CSV) ---- */
+function normName(s){return (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
+function loadXLSX(){return new Promise((res,rej)=>{ if(window.XLSX)return res(window.XLSX);
+  const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  s.onload=()=>res(window.XLSX); s.onerror=()=>rej(new Error('Não foi possível carregar o leitor de Excel.')); document.head.appendChild(s); });}
+function splitCSV(line){
+  const delim=(line.split(';').length>line.split(',').length)?';':',';
+  const out=[]; let cur='',q=false;
+  for(let i=0;i<line.length;i++){const c=line[i];
+    if(c==='"'){ if(q&&line[i+1]==='"'){cur+='"';i++;} else q=!q; }
+    else if(c===delim&&!q){out.push(cur);cur='';}
+    else cur+=c;
+  }
+  out.push(cur); return out.map(s=>s.trim());
+}
+async function fileToRows(file){
+  const nm=file.name.toLowerCase();
+  if(nm.endsWith('.csv')){
+    const text=await file.text();
+    return text.split(/\r?\n/).map(splitCSV).filter(r=>r.length&&r.some(c=>c!==''));
+  }
+  const XLSX=await loadXLSX();
+  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+}
+function detectCols(rows){
+  for(let i=0;i<Math.min(rows.length,12);i++){
+    const cells=(rows[i]||[]).map(c=>normName(c)); const idx={};
+    cells.forEach((c,j)=>{
+      if(idx.nome==null&&(c.includes('colab')||c==='nome'||c.includes('usuario')||c.includes('canal'))) idx.nome=j;
+      if(idx.prod==null&&c.includes('produt')) idx.prod=j;
+      if(idx.neu==null&&c.includes('neutr')) idx.neu=j;
+      if(idx.ind==null&&c.includes('indev')) idx.ind=j;
+      if(idx.ocio==null&&c.includes('ocio')) idx.ocio=j;
+      if(idx.score==null&&c.includes('score')) idx.score=j;
+    });
+    if(idx.nome!=null&&(idx.prod!=null||idx.score!=null||idx.ind!=null)) return {headerRow:i,idx};
+  }
+  return null;
+}
+async function importWM(rows){
+  const det=detectCols(rows);
+  if(!det) return {error:'Não identifiquei as colunas. O arquivo precisa ter uma coluna de colaborador e ao menos uma de produtividade (Produtivas, Indevidas ou Score).'};
+  const profs=(window._profs&&window._profs.length)?window._profs:((await sb.from('profiles').select('*')).data||[]);
+  const cols=det.idx; let updated=0; const notFound=[];
+  for(let i=det.headerRow+1;i<rows.length;i++){
+    const r=rows[i]; if(!r||cols.nome==null||!r[cols.nome]) continue;
+    const rawName=String(r[cols.nome]).replace(/#\d+.*$/,'').split('\n')[0].trim();
+    const nm=normName(rawName); if(!nm) continue;
+    let p=profs.find(x=>normName(x.nome)===nm);
+    if(!p){ const b=nm.split(' '); p=profs.find(x=>{const a=normName(x.nome).split(' ');return a[0]===b[0]&&a[a.length-1]===b[b.length-1];}); }
+    if(!p){ notFound.push(rawName); continue; }
+    const val=k=>cols[k]!=null?String(r[cols[k]]).trim():'';
+    const metricas=[
+      {label:'Produtivas %',valor:val('prod'),meta:'70%'},
+      {label:'Neutras %',valor:val('neu'),meta:''},
+      {label:'Indevidas %',valor:val('ind'),meta:'0%'},
+      {label:'Ócio',valor:val('ocio'),meta:''},
+      {label:'Score',valor:val('score'),meta:''},
+    ].filter(m=>m.valor!=='');
+    if(!metricas.length){ continue; }
+    const rec={profile_id:p.id,departamento:p.departamento,periodo:'Importado '+new Date().toLocaleDateString('pt-BR'),titulo:'Produtividade (WorkMonitor)',metricas,observacoes:'Importado automaticamente do WorkMonitor.'};
+    const {data:ex}=await sb.from('relatorios_performance').select('id').eq('profile_id',p.id).eq('titulo','Produtividade (WorkMonitor)').limit(1);
+    if(ex&&ex.length) await sb.from('relatorios_performance').update(rec).eq('id',ex[0].id);
+    else await sb.from('relatorios_performance').insert(rec);
+    updated++;
+  }
+  return {updated,notFound};
+}
+function importWMModal(){
+  openModal(`<div class="modal-h"><h3>Importar produtividade (WorkMonitor)</h3></div>
+    <div class="modal-b">
+      <div class="card-sub" style="margin-bottom:12px;line-height:1.5">No WorkMonitor, <b>exporte o relatório</b> (Excel ou CSV) da equipe. Depois selecione o arquivo abaixo — o painel preenche a produtividade de cada colaborador automaticamente, encontrando pelo nome.</div>
+      <div class="fg"><label>Arquivo exportado (.xlsx, .xls ou .csv)</label><input type="file" id="wm_file" accept=".csv,.xlsx,.xls"></div>
+      <div id="wm_status" style="margin-top:12px;font-size:13px;color:var(--muted)"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="wm_go">Importar</button></div>`);
+  $('#wm_go').onclick=async ()=>{
+    const f=$('#wm_file').files[0]; if(!f)return toast('Selecione o arquivo exportado.','err');
+    $('#wm_status').textContent='Processando…'; $('#wm_go').disabled=true;
+    try{
+      const rows=await fileToRows(f);
+      const res=await importWM(rows);
+      if(res.error){ $('#wm_status').textContent=''; toast(res.error,'err'); $('#wm_go').disabled=false; return; }
+      closeModal();
+      toast(res.updated+' colaborador(es) atualizado(s)'+(res.notFound.length?' · '+res.notFound.length+' não encontrado(s)':''),'ok');
+      if(res.notFound.length) setTimeout(()=>toast('Não encontrados: '+res.notFound.slice(0,6).join(', '),''),400);
+      drawGer();
+    }catch(e){ $('#wm_status').textContent=''; toast('Erro ao ler o arquivo: '+e.message,'err'); $('#wm_go').disabled=false; }
+  };
 }
 
 async function gerColabView(b,pid){
