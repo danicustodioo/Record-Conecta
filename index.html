@@ -469,12 +469,14 @@ async function renderInicio(c){
   loadingCard(c);
   const now=new Date();
   const in7=new Date(now.getTime()+7*864e5);
-  const [{data:evs},{data:exigs},{data:proj},{data:tasks}] = await Promise.all([
+  const [{data:evs},{data:exigs},{data:proj},{data:tasks},{data:results}] = await Promise.all([
     sb.from('eventos').select('*').gte('data_inicio',now.toISOString()).order('data_inicio').limit(50),
     sb.from('exigencias').select('*').neq('status','concluida'),
     sb.from('plano_estrategico').select('id'),
     sb.from('plano_tarefas').select('concluida'),
+    sb.from('resultados_reuniao').select('resumo,decisoes,proximos_passos'),
   ]);
+  const pendResults=(results||[]).filter(r=>!(r.resumo||'').trim()&&!(r.decisoes||'').trim()&&!(r.proximos_passos||'').trim()).length;
   const evList=evs||[];
   const weekEvs=evList.filter(e=>new Date(e.data_inicio)<=in7);
   const treinos=evList.filter(e=>e.tipo==='treinamento').length;
@@ -487,7 +489,7 @@ async function renderInicio(c){
       <div class="metric"><div class="v">${weekEvs.length}</div><div class="l">Compromissos nos próximos 7 dias</div></div>
       <div class="metric"><div class="v">${treinos}</div><div class="l">Treinamentos agendados</div></div>
       <div class="metric"><div class="v">${(exigs||[]).length}</div><div class="l">Exigências em aberto ${isGer()?'(escritório)':'(você/seu setor)'}</div></div>
-      <div class="metric"><div class="v">${pct}%</div><div class="l">Progresso do plano estratégico</div></div>
+      <div class="metric" ${pendResults?'style="border-left-color:var(--warn)"':''}><div class="v">${pendResults}</div><div class="l">${pendResults?'⚠️ ':''}Reuniões aguardando resultado</div></div>
     </div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
       <div class="card">
@@ -646,9 +648,22 @@ function eventoModal(e=null,tipo='reuniao'){
       data_fim:$('#m_fim').value?new Date($('#m_fim').value).toISOString():null,
       local:$('#m_loc').value.trim(),responsavel:$('#m_resp').value.trim(),link:$('#m_link').value.trim(),descricao:$('#m_desc').value.trim()};
     if(!rec.titulo||!rec.data_inicio)return toast('Preencha título e data de início.','err');
-    const isNew=!e;
-    const ok=await saveRow('eventos',e,rec,'Evento salvo');
-    if(ok&&isNew) notifyEvento(rec);
+    if(e){ await saveRow('eventos',e,rec,'Evento salvo'); return; }
+    // NOVO evento
+    const {data:ins,error}=await sb.from('eventos').insert(rec).select().single();
+    if(error){ toast(error.message,'err'); return; }
+    // Reunião -> cria automaticamente um resultado pendente vinculado
+    if(rec.tipo==='reuniao'){
+      await sb.from('resultados_reuniao').insert({
+        titulo: rec.titulo, tipo:'cliente',
+        data: rec.data_inicio.slice(0,10),
+        departamento: rec.departamento, evento_id: ins.id
+      });
+    }
+    closeModal(); toast('Evento criado','ok');
+    notifyEvento(rec);
+    state.calRef = new Date(rec.data_inicio);
+    go('calendario');
   };
 }
 
@@ -671,15 +686,18 @@ async function renderResultados(c){
     if(!list.length){box.innerHTML=`<div class="card">${emptyBox('Nenhum resultado registrado ainda.','✎')}</div>`;return;}
     box.innerHTML=list.map(r=>{
       const owner=r.created_by===state.profile.id||isGer();
-      return `<div class="item"><div class="it-top"><div>
-        <div class="it-title">${esc(r.titulo)}</div>
-        <div class="it-meta"><span>🗓 ${fmtDate(r.data)}</span><span class="chip">${r.tipo==='cliente'?'Cliente':'Interna'}</span>${r.cliente?`<span>🏢 ${esc(r.cliente)}</span>`:''}${r.participantes?`<span>👥 ${esc(r.participantes)}</span>`:''}</div>
+      const pend = !(r.resumo||'').trim() && !(r.decisoes||'').trim() && !(r.proximos_passos||'').trim();
+      return `<div class="item" ${pend?'style="border-left:3px solid var(--warn);background:#fffdf6"':''}><div class="it-top"><div>
+        <div class="it-title">${pend?'⚠️ ':''}${esc(r.titulo)}</div>
+        <div class="it-meta"><span>🗓 ${fmtDate(r.data)}</span><span class="chip">${r.tipo==='cliente'?'Cliente':'Interna'}</span>${r.cliente?`<span>🏢 ${esc(r.cliente)}</span>`:''}${r.participantes?`<span>👥 ${esc(r.participantes)}</span>`:''}${pend?'<span class="chip pri-alta">Aguardando resultado</span>':''}</div>
       </div><div style="display:flex;gap:6px;align-items:center">${depChip(r.departamento)}${owner?`<div class="row-actions"><button class="icon-btn" data-edit="${r.id}">✎</button><button class="icon-btn" data-del="${r.id}">🗑</button></div>`:''}</div></div>
       ${r.resumo?`<div class="it-body"><b>Resumo:</b> ${esc(r.resumo)}</div>`:''}
       ${r.decisoes?`<div class="it-body"><b>Decisões:</b> ${esc(r.decisoes)}</div>`:''}
-      ${r.proximos_passos?`<div class="it-body"><b>Próximos passos:</b> ${esc(r.proximos_passos)}</div>`:''}</div>`;
+      ${r.proximos_passos?`<div class="it-body"><b>Próximos passos:</b> ${esc(r.proximos_passos)}</div>`:''}
+      ${pend?`<div style="margin-top:10px"><button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button></div>`:''}</div>`;
     }).join('');
     box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.edit)));
+    box.querySelectorAll('[data-fill]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.fill)));
     box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delRow('resultados_reuniao',b.dataset.del,'Resultado excluído'));
   };
   $('#fTipo').onchange=draw;$('#fDep2').onchange=draw;draw();
