@@ -390,7 +390,7 @@ function buildAgendaUrl(inp){
     const m=inp.match(/src=["']?([^"'\s>]+)/i);
     return m?m[1].replace(/&amp;/g,'&'):inp;
   }
-  if(inp.includes('@')) return 'https://calendar.google.com/calendar/embed?src='+encodeURIComponent(inp)+'&ctz=America%2FSao_Paulo&mode=WEEK';
+  if(inp.includes('@')) return 'https://calendar.google.com/calendar/embed?src='+encodeURIComponent(inp)+'&ctz=America%2FSao_Paulo&mode=MONTH';
   return inp;
 }
 function renderAgenda(c){
