@@ -553,7 +553,18 @@ async function renderCalendario(c){
         <button class="btn btn-gold btn-sm" id="calAdd">+ Evento</button></div>
       </div>
       <div class="cal-grid">${DOW.map(d=>`<div class="cal-dow">${d}</div>`).join('')}${cells}</div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3 style="font-size:16px">Eventos de ${MESES[m]} ${y}</h3>
+      <div class="card-sub">Toque em ✎ para editar ou 🗑 para excluir</div>
+      <div id="calList" style="margin-top:12px"></div>
     </div>`;
+  {
+    const monthEvs=(evs||[]).slice().sort((a,b)=>new Date(a.data_inicio)-new Date(b.data_inicio));
+    $('#calList').innerHTML = monthEvs.length ? monthEvs.map(eventoCard).join('') : emptyBox('Nenhum evento neste mês.','▦');
+    $('#calList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const ev=evs.find(z=>z.id===b.dataset.edit); if(ev) eventoModal(ev, ev.tipo);});
+    $('#calList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delRow('eventos',b.dataset.del,'Evento excluído'));
+  }
   $('#calPrev').onclick=()=>{state.calRef=new Date(y,m-1,1);renderCalendario(c);};
   $('#calNext').onclick=()=>{state.calRef=new Date(y,m+1,1);renderCalendario(c);};
   $('#calToday').onclick=()=>{state.calRef=new Date();renderCalendario(c);};
