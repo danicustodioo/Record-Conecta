@@ -272,7 +272,7 @@ const PRAZO = {curto:'Curto prazo',medio:'Médio prazo',longo:'Longo prazo'};
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const DOW = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
-const state = { profile:null, view:'inicio', calRef:new Date(), gerSub:'plano', channel:null };
+const state = { profile:null, view:'inicio', calRef:new Date(), gerSub:'setores', channel:null };
 
 /* ============================================================
    HELPERS
@@ -663,8 +663,8 @@ async function renderSetor(c){
 async function renderGerencia(c){
   if(!isGer()){c.innerHTML=`<div class="card">${emptyBox('Acesso restrito à gerência.','🔒')}</div>`;return;}
   c.innerHTML=`<div class="subtabs">
+    <button class="subtab" data-sub="setores">Setores</button>
     <button class="subtab" data-sub="plano">Plano Estratégico</button>
-    <button class="subtab" data-sub="gestao">Performance & Feedback</button>
     <button class="subtab" data-sub="equipe">Colaboradores</button>
   </div><div id="gerBody"></div>`;
   c.querySelectorAll('.subtab').forEach(b=>b.onclick=()=>{state.gerSub=b.dataset.sub;drawGer();});
@@ -673,8 +673,8 @@ async function renderGerencia(c){
 function drawGer(){
   document.querySelectorAll('.subtab').forEach(b=>b.classList.toggle('active',b.dataset.sub===state.gerSub));
   const b=$('#gerBody');
+  if(state.gerSub==='setores')return gerSetores(b);
   if(state.gerSub==='plano')return gerPlano(b);
-  if(state.gerSub==='gestao')return gerGestao(b);
   if(state.gerSub==='equipe')return gerEquipe(b);
 }
 
@@ -754,43 +754,72 @@ function taskModal(projId,cb){
   };
 }
 
-/* ---- Gestão: performance / exigências / feedback (gerência escreve) ---- */
-async function gerGestao(b){
+/* ---- Setores: visão da gerência por setor → colaborador ---- */
+async function gerSetores(b){
   b.innerHTML='<div class="empty">Carregando…</div>';
-  const [{data:profs},{data:perf},{data:exig},{data:fb}]=await Promise.all([
-    sb.from('profiles').select('*').order('departamento'),
-    sb.from('relatorios_performance').select('*').order('created_at',{ascending:false}),
-    sb.from('exigencias').select('*').order('created_at',{ascending:false}),
-    sb.from('feedbacks').select('*').order('data',{ascending:false}),
+  const [{data:allProfs},{data:perf},{data:exig},{data:fb}]=await Promise.all([
+    sb.from('profiles').select('*').order('nome'),
+    sb.from('relatorios_performance').select('id,profile_id'),
+    sb.from('exigencias').select('id,profile_id,status'),
+    sb.from('feedbacks').select('id,profile_id'),
   ]);
-  const nameById={}; (profs||[]).forEach(p=>nameById[p.id]=p.nome);
-  window._profs=profs||[];
+  window._profs = allProfs||[];
+  const cnt=(arr,pid)=>(arr||[]).filter(x=>x.profile_id===pid).length;
+  const SET=['contabil','fiscal','pessoal','paralegal'];
+  let html=`<div class="section-head"><h3>Setores do escritório</h3></div>
+    <div class="card-sub" style="margin:-8px 0 16px;color:var(--muted);font-size:13px">Abra um setor e clique no colaborador para ver e lançar performance, exigências e feedback dele.</div>`;
+  SET.forEach(dep=>{
+    const people=(allProfs||[]).filter(p=>p.departamento===dep);
+    html+=`<div class="card" style="margin-bottom:16px">
+      <div class="it-top"><h3 style="display:flex;align-items:center;gap:8px">${depChip(dep)} <span>Setor ${DEPTS[dep]}</span></h3>
+      <span class="chip">${people.length} colaborador${people.length!==1?'es':''}</span></div>`;
+    if(!people.length) html+=`<div class="empty" style="padding:18px">Nenhum colaborador neste setor ainda.</div>`;
+    else html+=`<div style="margin-top:12px">`+people.map(p=>`<div class="item" data-prof="${p.id}" style="cursor:pointer">
+      <div class="it-top"><div><div class="it-title">${esc(p.nome)}</div>
+      <div class="it-meta">${p.cargo?`<span>💼 ${esc(p.cargo)}</span>`:''}<span>📊 ${cnt(perf,p.id)} relatório(s)</span><span>📌 ${(exig||[]).filter(x=>x.profile_id===p.id&&x.status!=='concluida').length} exig. aberta(s)</span><span>💬 ${cnt(fb,p.id)} feedback(s)</span></div></div>
+      <span class="chip dep-gerencia">Ver desempenho ›</span></div></div>`).join('')+`</div>`;
+    html+=`</div>`;
+  });
+  b.innerHTML=html;
+  b.querySelectorAll('[data-prof]').forEach(x=>x.onclick=()=>gerColabView(b,x.dataset.prof));
+}
+
+async function gerColabView(b,pid){
+  b.innerHTML='<div class="empty">Carregando…</div>';
+  let prof=(window._profs||[]).find(p=>p.id===pid);
+  if(!prof){ prof=(await sb.from('profiles').select('*').eq('id',pid).single()).data; }
+  const [{data:perf},{data:exig},{data:fb}]=await Promise.all([
+    sb.from('relatorios_performance').select('*').eq('profile_id',pid).order('created_at',{ascending:false}),
+    sb.from('exigencias').select('*').eq('profile_id',pid).order('created_at',{ascending:false}),
+    sb.from('feedbacks').select('*').eq('profile_id',pid).order('data',{ascending:false}),
+  ]);
+  const prefill={profile_id:pid,departamento:prof.departamento,nome:prof.nome};
+  const refresh=()=>gerColabView(b,pid);
   b.innerHTML=`
-    <div class="section-head"><h3>Gestão de desempenho</h3>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-gold btn-sm" id="gPerf">+ Performance</button>
-        <button class="btn btn-gold btn-sm" id="gExig">+ Exigência</button>
-        <button class="btn btn-gold btn-sm" id="gFb">+ Feedback</button>
-      </div></div>
-    <div class="grid" style="grid-template-columns:1fr">
-      <div class="card"><h3>📊 Relatórios de performance</h3><div id="gg_perf" style="margin-top:12px"></div></div>
-      <div class="card"><h3>📌 Exigências</h3><div id="gg_exig" style="margin-top:12px"></div></div>
-      <div class="card"><h3>💬 Feedbacks</h3><div id="gg_fb" style="margin-top:12px"></div></div>
-    </div>`;
-  $('#gPerf').onclick=()=>perfModal();$('#gExig').onclick=()=>exigModal();$('#gFb').onclick=()=>fbModal();
-  const who=r=>r.profile_id?esc(nameById[r.profile_id]||'—'):('Setor '+(DEPTS[r.departamento]||r.departamento));
-  $('#gg_perf').innerHTML=(perf||[]).length?perf.map(p=>`<div class="item"><div class="it-top"><div><div class="it-title">${esc(p.titulo)} — ${who(p)}</div><div class="it-meta"><span class="chip">${esc(p.periodo)}</span>${depChip(p.departamento)}</div></div><button class="icon-btn" data-del="performance:${p.id}">🗑</button></div>
-    <div style="margin-top:8px">${(p.metricas||[]).map(m=>`<div class="metrica"><span>${esc(m.label)}</span><span><b>${esc(m.valor)}</b>${m.meta?` / ${esc(m.meta)}`:''}</span></div>`).join('')}</div></div>`).join(''):emptyBox('Nenhum relatório ainda.');
-  $('#gg_exig').innerHTML=(exig||[]).length?exig.map(x=>`<div class="item"><div class="it-top"><div><div class="it-title">${esc(x.titulo)} — ${who(x)}</div><div class="it-meta">${x.prazo?`<span>⏱ ${fmtDate(x.prazo)}</span>`:''}<span class="chip pri-${x.prioridade}">${x.prioridade}</span><span class="chip st-${x.status}">${x.status.replace('_',' ')}</span></div></div><button class="icon-btn" data-del="exigencias:${x.id}">🗑</button></div></div>`).join(''):emptyBox('Nenhuma exigência ainda.');
-  $('#gg_fb').innerHTML=(fb||[]).length?fb.map(f=>`<div class="item"><div class="it-top"><div><div class="it-title">${who(f)}</div><div class="it-meta"><span>🗓 ${fmtDate(f.data)}</span><span class="chip tp-${f.tipo}">${f.tipo}</span></div></div><button class="icon-btn" data-del="feedbacks:${f.id}">🗑</button></div><div class="it-body">${esc(f.texto)}</div></div>`).join(''):emptyBox('Nenhum feedback ainda.');
-  b.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{const[t,id]=btn.dataset.del.split(':');delRow(t==='performance'?'relatorios_performance':t,id,'Excluído',()=>gerGestao(b));});
+    <button class="btn btn-ghost btn-sm" id="backBtn" style="margin-bottom:14px">‹ Voltar aos setores</button>
+    <div class="card" style="margin-bottom:16px"><div class="it-top">
+      <div><h3>${esc(prof.nome)}</h3><div class="card-sub" style="margin-top:4px">${depChip(prof.departamento)} ${prof.cargo?esc(prof.cargo):''}</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-gold btn-sm" id="cvPerf">+ Performance</button><button class="btn btn-gold btn-sm" id="cvExig">+ Exigência</button><button class="btn btn-gold btn-sm" id="cvFb">+ Feedback</button></div></div></div>
+    <div class="card" style="margin-bottom:16px"><h3>📊 Performance</h3><div id="cv_perf" style="margin-top:12px"></div></div>
+    <div class="card" style="margin-bottom:16px"><h3>📌 Exigências</h3><div id="cv_exig" style="margin-top:12px"></div></div>
+    <div class="card"><h3>💬 Feedbacks</h3><div id="cv_fb" style="margin-top:12px"></div></div>`;
+  $('#backBtn').onclick=()=>gerSetores(b);
+  $('#cvPerf').onclick=()=>perfModal(prefill,refresh);
+  $('#cvExig').onclick=()=>exigModal(prefill,refresh);
+  $('#cvFb').onclick=()=>fbModal(prefill,refresh);
+  $('#cv_perf').innerHTML=(perf||[]).length?perf.map(p=>`<div class="item"><div class="it-top"><div class="it-title">${esc(p.titulo)}</div><div style="display:flex;gap:6px;align-items:center"><span class="chip">${esc(p.periodo)}</span><button class="icon-btn" data-del="relatorios_performance:${p.id}">🗑</button></div></div>
+    <div style="margin-top:8px">${(p.metricas||[]).map(m=>`<div class="metrica"><span>${esc(m.label)}</span><span><b>${esc(m.valor)}</b>${m.meta?` / meta ${esc(m.meta)}`:''}</span></div>`).join('')}</div>${p.observacoes?`<div class="it-body"><b>Obs:</b> ${esc(p.observacoes)}</div>`:''}</div>`).join(''):emptyBox('Nenhum relatório ainda.','📊');
+  $('#cv_exig').innerHTML=(exig||[]).length?exig.map(x=>`<div class="item"><div class="it-top"><div><div class="it-title">${esc(x.titulo)}</div><div class="it-meta">${x.prazo?`<span>⏱ ${fmtDate(x.prazo)}</span>`:''}<span class="chip pri-${x.prioridade}">${x.prioridade}</span><span class="chip st-${x.status}">${x.status.replace('_',' ')}</span></div></div><button class="icon-btn" data-del="exigencias:${x.id}">🗑</button></div>${x.descricao?`<div class="it-body">${esc(x.descricao)}</div>`:''}</div>`).join(''):emptyBox('Nenhuma exigência ainda.','📌');
+  $('#cv_fb').innerHTML=(fb||[]).length?fb.map(f=>`<div class="item"><div class="it-top"><div class="it-title">${esc(f.autor||'Gerência')}</div><div style="display:flex;gap:6px;align-items:center"><span class="chip tp-${f.tipo}">${f.tipo}</span><button class="icon-btn" data-del="feedbacks:${f.id}">🗑</button></div></div><div class="it-meta"><span>🗓 ${fmtDate(f.data)}</span></div><div class="it-body">${esc(f.texto)}</div></div>`).join(''):emptyBox('Nenhum feedback ainda.','💬');
+  b.querySelectorAll('[data-del]').forEach(btn=>btn.onclick=()=>{const[t,id]=btn.dataset.del.split(':');delRow(t,id,'Excluído',refresh);});
 }
 function profOptions(dep){return (window._profs||[]).filter(p=>!dep||p.departamento===dep).map(p=>`<option value="${p.id}" data-dep="${p.departamento}">${esc(p.nome)} (${DEPTS[p.departamento]||''})</option>`).join('');}
-function perfModal(){
-  openModal(`<div class="modal-h"><h3>Novo relatório de performance</h3></div>
+function perfModal(prefill,onSaved){
+  const lock=!!(prefill&&prefill.profile_id);
+  openModal(`<div class="modal-h"><h3>Nova performance${lock?' — '+esc(prefill.nome):''}</h3></div>
     <div class="modal-b"><div class="form-grid">
-      <div class="fg"><label>Colaborador</label><select id="pf_prof"><option value="">— (nível setor) —</option>${profOptions()}</select></div>
-      <div class="form-grid two"><div class="fg"><label>Setor</label><select id="pf_dep">${Object.entries(DEPTS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+      ${lock?'':`<div class="fg"><label>Colaborador</label><select id="pf_prof"><option value="">— (nível setor) —</option>${profOptions()}</select></div>`}
+      <div class="form-grid two"><div class="fg"><label>Setor</label><select id="pf_dep">${Object.entries(DEPTS).map(([k,v])=>`<option value="${k}" ${prefill&&prefill.departamento===k?'selected':''}>${v}</option>`).join('')}</select></div>
       <div class="fg"><label>Período</label><input id="pf_per" placeholder="Ex: Julho/2026"></div></div>
       <div class="fg"><label>Título</label><input id="pf_tit" value="Relatório de performance"></div>
       <div class="fg"><label>Métricas</label><div id="pf_metrics"></div><button class="btn btn-ghost btn-sm" id="pf_addm" style="margin-top:6px">+ Métrica</button></div>
@@ -800,19 +829,21 @@ function perfModal(){
   const addM=(l='',v='',mt='')=>{const d=el('div','form-grid',`<div style="display:grid;grid-template-columns:1fr 80px 80px 30px;gap:6px"><input placeholder="Indicador" value="${esc(l)}" class="mx-l"><input placeholder="Valor" value="${esc(v)}" class="mx-v"><input placeholder="Meta" value="${esc(mt)}" class="mx-m"><button class="icon-btn mx-x">×</button></div>`);d.querySelector('.mx-x').onclick=()=>d.remove();$('#pf_metrics').appendChild(d);};
   addM();addM();
   $('#pf_addm').onclick=()=>addM();
-  $('#pf_prof').onchange=e=>{const o=e.target.selectedOptions[0];if(o&&o.dataset.dep)$('#pf_dep').value=o.dataset.dep;};
+  if(!lock) $('#pf_prof').onchange=e=>{const o=e.target.selectedOptions[0];if(o&&o.dataset.dep)$('#pf_dep').value=o.dataset.dep;};
+  else $('#pf_dep').disabled=true;
   $('#pf_save').onclick=async ()=>{
     const metricas=[...document.querySelectorAll('#pf_metrics .form-grid')].map(r=>({label:r.querySelector('.mx-l').value.trim(),valor:r.querySelector('.mx-v').value.trim(),meta:r.querySelector('.mx-m').value.trim()})).filter(m=>m.label);
-    const rec={profile_id:$('#pf_prof').value||null,departamento:$('#pf_dep').value,periodo:$('#pf_per').value.trim(),titulo:$('#pf_tit').value.trim()||'Relatório de performance',metricas,observacoes:$('#pf_obs').value.trim()};
+    const rec={profile_id:lock?prefill.profile_id:($('#pf_prof').value||null),departamento:prefill?prefill.departamento:$('#pf_dep').value,periodo:$('#pf_per').value.trim(),titulo:$('#pf_tit').value.trim()||'Relatório de performance',metricas,observacoes:$('#pf_obs').value.trim()};
     const {error}=await sb.from('relatorios_performance').insert(rec);
-    if(error)return toast(error.message,'err');closeModal();toast('Relatório salvo','ok');drawGer();
+    if(error)return toast(error.message,'err');closeModal();toast('Relatório salvo','ok');(onSaved||drawGer)();
   };
 }
-function exigModal(){
-  openModal(`<div class="modal-h"><h3>Nova exigência</h3></div>
+function exigModal(prefill,onSaved){
+  const lock=!!(prefill&&prefill.profile_id);
+  openModal(`<div class="modal-h"><h3>Nova exigência${lock?' — '+esc(prefill.nome):''}</h3></div>
     <div class="modal-b"><div class="form-grid">
-      <div class="fg"><label>Colaborador</label><select id="ex_prof"><option value="">— (setor todo) —</option>${profOptions()}</select></div>
-      <div class="form-grid two"><div class="fg"><label>Setor</label><select id="ex_dep">${Object.entries(DEPTS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+      ${lock?'':`<div class="fg"><label>Colaborador</label><select id="ex_prof"><option value="">— (setor todo) —</option>${profOptions()}</select></div>`}
+      <div class="form-grid two"><div class="fg"><label>Setor</label><select id="ex_dep">${Object.entries(DEPTS).map(([k,v])=>`<option value="${k}" ${prefill&&prefill.departamento===k?'selected':''}>${v}</option>`).join('')}</select></div>
       <div class="fg"><label>Prazo</label><input type="date" id="ex_prazo"></div></div>
       <div class="fg"><label>Título *</label><input id="ex_tit"></div>
       <div class="fg"><label>Descrição</label><textarea id="ex_desc"></textarea></div>
@@ -820,30 +851,32 @@ function exigModal(){
       <div class="fg"><label>Status</label><select id="ex_st"><option value="pendente">Pendente</option><option value="em_andamento">Em andamento</option><option value="concluida">Concluída</option></select></div></div>
     </div></div>
     <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="ex_save">Salvar</button></div>`);
-  $('#ex_prof').onchange=e=>{const o=e.target.selectedOptions[0];if(o&&o.dataset.dep)$('#ex_dep').value=o.dataset.dep;};
+  if(!lock) $('#ex_prof').onchange=e=>{const o=e.target.selectedOptions[0];if(o&&o.dataset.dep)$('#ex_dep').value=o.dataset.dep;};
+  else $('#ex_dep').disabled=true;
   $('#ex_save').onclick=async ()=>{
     const titulo=$('#ex_tit').value.trim(); if(!titulo)return toast('Informe o título.','err');
-    const rec={profile_id:$('#ex_prof').value||null,departamento:$('#ex_dep').value,titulo,descricao:$('#ex_desc').value.trim(),prazo:$('#ex_prazo').value||null,prioridade:$('#ex_pri').value,status:$('#ex_st').value};
+    const rec={profile_id:lock?prefill.profile_id:($('#ex_prof').value||null),departamento:prefill?prefill.departamento:$('#ex_dep').value,titulo,descricao:$('#ex_desc').value.trim(),prazo:$('#ex_prazo').value||null,prioridade:$('#ex_pri').value,status:$('#ex_st').value};
     const {error}=await sb.from('exigencias').insert(rec);
-    if(error)return toast(error.message,'err');closeModal();toast('Exigência criada','ok');drawGer();
+    if(error)return toast(error.message,'err');closeModal();toast('Exigência criada','ok');(onSaved||drawGer)();
   };
 }
-function fbModal(){
-  openModal(`<div class="modal-h"><h3>Novo feedback</h3></div>
+function fbModal(prefill,onSaved){
+  const lock=!!(prefill&&prefill.profile_id);
+  openModal(`<div class="modal-h"><h3>Novo feedback${lock?' — '+esc(prefill.nome):''}</h3></div>
     <div class="modal-b"><div class="form-grid">
-      <div class="fg"><label>Colaborador *</label><select id="fb_prof">${profOptions()}</select></div>
+      ${lock?'':`<div class="fg"><label>Colaborador *</label><select id="fb_prof">${profOptions()}</select></div>`}
       <div class="form-grid two"><div class="fg"><label>Tipo</label><select id="fb_tipo"><option value="positivo">Positivo</option><option value="melhoria">Ponto de melhoria</option><option value="geral">Geral</option></select></div>
       <div class="fg"><label>Data</label><input type="date" id="fb_data" value="${new Date().toISOString().slice(0,10)}"></div></div>
       <div class="fg"><label>Mensagem *</label><textarea id="fb_txt"></textarea></div>
     </div></div>
     <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="fb_save">Enviar</button></div>`);
   $('#fb_save').onclick=async ()=>{
-    const pid=$('#fb_prof').value, txt=$('#fb_txt').value.trim();
+    const pid=lock?prefill.profile_id:$('#fb_prof').value, txt=$('#fb_txt').value.trim();
     if(!pid||!txt)return toast('Selecione o colaborador e escreva a mensagem.','err');
-    const prof=(window._profs||[]).find(p=>p.id===pid);
+    const prof=(window._profs||[]).find(p=>p.id===pid)||{departamento:prefill&&prefill.departamento};
     const rec={profile_id:pid,departamento:prof.departamento,autor:state.profile.nome,tipo:$('#fb_tipo').value,texto:txt,data:$('#fb_data').value};
     const {error}=await sb.from('feedbacks').insert(rec);
-    if(error)return toast(error.message,'err');closeModal();toast('Feedback enviado','ok');drawGer();
+    if(error)return toast(error.message,'err');closeModal();toast('Feedback enviado','ok');(onSaved||drawGer)();
   };
 }
 
