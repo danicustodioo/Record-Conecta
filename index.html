@@ -1246,7 +1246,7 @@ async function notifyEvento(rec){
     const tipo = TIPO_EV[rec.tipo]||'Evento';
     await fetch(`${SUPABASE_URL}/functions/v1/notificar-evento`,{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
-      body:JSON.stringify({ title:'📅 '+rec.titulo, body:tipo+(quando?' · '+quando:'')+dep, url:'./', tag:'evento' })});
+      body:JSON.stringify({ title:'📅 '+rec.titulo, body:tipo+(quando?' · '+quando:'')+dep, url:'./', tag:'evento', departamento:rec.departamento||'todos' })});
   }catch(e){ /* não bloqueia */ }
 }
 document.addEventListener('click',(e)=>{ if(e.target&&e.target.id==='notifBtn') enableNotifications(); });
