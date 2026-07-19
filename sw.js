@@ -1,7 +1,7 @@
 /* Record Conecta — Service Worker (PWA)
    Cacheia a "casca" do app para abrir rápido/offline.
    Os dados (Supabase, Google, fontes) sempre vão pela rede. */
-const CACHE = 'record-conecta-v1';
+const CACHE = 'record-conecta-v2';
 const SHELL = [
   './',
   './index.html',
@@ -9,7 +9,9 @@ const SHELL = [
   './icon-192.png',
   './icon-512.png',
   './apple-touch-icon.png',
-  './favicon-32.png'
+  './favicon-32.png',
+  './logo-symbol.png',
+  './logo-symbol-light.png'
 ];
 
 self.addEventListener('install', (e) => {
