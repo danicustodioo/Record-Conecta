@@ -7,6 +7,15 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- PWA (app instalável no celular e desktop) -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#142840">
+<link rel="icon" type="image/png" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Record Conecta">
 <style>
 :root{
   --navy:#142840; --navy-2:#1c3454; --gold:#C9AF74; --gold-d:#b2955a;
@@ -249,7 +258,10 @@ nav{flex:1;padding:12px 10px;overflow-y:auto}
         <button id="menuBtn">☰</button>
         <div><h2 id="viewTitle">Início</h2><div class="tsub" id="viewSub"></div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" id="refreshBtn" title="Atualizar">⟳ Atualizar</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-gold btn-sm hidden" id="installBtn" title="Instalar aplicativo">⬇ Instalar app</button>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn" title="Atualizar">⟳ Atualizar</button>
+      </div>
     </div>
     <div class="content" id="content"></div>
   </div>
@@ -1033,6 +1045,27 @@ function openModal(html){
 }
 function closeModal(){const b=$('#modalBg');if(b)b.remove();}
 window.closeModal=closeModal;
+
+/* ============================================================
+   PWA — instalação e service worker
+============================================================ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+}
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault(); deferredPrompt=e;
+  const b=$('#installBtn'); if(b) b.classList.remove('hidden');
+});
+document.addEventListener('click', async (e)=>{
+  if(e.target && e.target.id==='installBtn'){
+    if(!deferredPrompt){ toast('Use o menu do navegador → "Instalar app" / "Adicionar à tela inicial".'); return; }
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt=null; $('#installBtn').classList.add('hidden');
+  }
+});
+window.addEventListener('appinstalled', ()=>{ const b=$('#installBtn'); if(b) b.classList.add('hidden'); toast('App instalado! 🎉','ok'); });
 
 /* ============================================================
    START
