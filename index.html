@@ -198,6 +198,20 @@ nav{flex:1;padding:12px 10px;overflow-y:auto}
   #scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:25}
 }
 @media(min-width:861px){#scrim{display:none}}
+/* App instalado (tela cheia): folga extra no topo para não encostar na barra de status */
+@media (display-mode: standalone), (display-mode: fullscreen){
+  .topbar{padding-top:calc(30px + env(safe-area-inset-top, 0px))}
+  #sidebar{padding-top:calc(24px + env(safe-area-inset-top, 0px))}
+}
+/* Barra de navegação inferior (celular) */
+#bottomnav{display:none}
+@media(max-width:860px){
+  #bottomnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:28;background:#fff;border-top:1px solid var(--line);box-shadow:0 -2px 14px rgba(20,40,64,.07);padding-bottom:env(safe-area-inset-bottom, 0px)}
+  .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 2px 7px;font-size:10px;font-weight:600;color:var(--muted)}
+  .bn-item .bn-ic{font-size:19px;line-height:1}
+  .bn-item.active{color:var(--gold-d)}
+  .content{padding-bottom:calc(74px + env(safe-area-inset-bottom, 0px))}
+}
 </style>
 </head>
 <body>
@@ -257,6 +271,14 @@ nav{flex:1;padding:12px 10px;overflow-y:auto}
     </div>
     <div class="content" id="content"></div>
   </div>
+
+  <nav id="bottomnav">
+    <button class="bn-item" data-view="inicio"><span class="bn-ic">◈</span>Início</button>
+    <button class="bn-item" data-view="calendario"><span class="bn-ic">▦</span>Calendário</button>
+    <button class="bn-item" data-view="agenda"><span class="bn-ic">🗓</span>Agenda</button>
+    <button class="bn-item" data-view="setor"><span class="bn-ic">◐</span>Setor</button>
+    <button class="bn-item" id="bnMenu"><span class="bn-ic">☰</span>Menu</button>
+  </nav>
 </div>
 
 <div id="toast"></div>
@@ -353,6 +375,7 @@ const VIEW_META = {
 function go(view){
   state.view=view;
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
+  document.querySelectorAll('.bn-item[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   const m=VIEW_META[view]||['',''];
   $('#viewTitle').textContent=m[0]; $('#viewSub').textContent = view==='setor'?('Setor '+(DEPTS[state.profile.departamento]||'')):m[1];
   closeSidebar();
@@ -360,7 +383,10 @@ function go(view){
 }
 document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>go(b.dataset.view)));
 $('#refreshBtn').addEventListener('click',()=>{render();toast('Atualizado','ok');});
-$('#menuBtn').addEventListener('click',()=>{ $('#sidebar').classList.add('open'); if(!$('#scrim')){const s=el('div');s.id='scrim';s.onclick=closeSidebar;document.body.appendChild(s);} });
+document.querySelectorAll('.bn-item[data-view]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.view)));
+function openSidebar(){ $('#sidebar').classList.add('open'); if(!$('#scrim')){const s=el('div');s.id='scrim';s.onclick=closeSidebar;document.body.appendChild(s);} }
+$('#menuBtn').addEventListener('click',openSidebar);
+$('#bnMenu').addEventListener('click',openSidebar);
 function closeSidebar(){ $('#sidebar').classList.remove('open'); const s=$('#scrim'); if(s)s.remove(); }
 
 /* ============================================================
