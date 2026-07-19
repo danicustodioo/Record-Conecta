@@ -1174,7 +1174,20 @@ window.closeModal=closeModal;
    PWA — instalação e service worker
 ============================================================ */
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+  let _reloading=false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(_reloading) return; _reloading=true; window.location.reload();
+  });
+  window.addEventListener('load', async ()=>{
+    try{
+      // updateViaCache:'none' => o navegador SEMPRE busca o sw.js novo (nunca do cache)
+      const reg=await navigator.serviceWorker.register('./sw.js', { updateViaCache:'none' });
+      reg.update();
+      // verifica atualização ao voltar pro app e de hora em hora
+      document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') reg.update(); });
+      setInterval(()=>reg.update(), 60*60*1000);
+    }catch(e){}
+  });
 }
 let deferredPrompt=null;
 window.addEventListener('beforeinstallprompt', (e)=>{
