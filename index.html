@@ -1149,7 +1149,7 @@ async function delColab(id){
 async function saveRow(table,existing,rec,okMsg){
   let error;
   if(existing){({error}=await sb.from(table).update(rec).eq('id',existing.id));}
-  else {rec.created_by=state.profile.id;({error}=await sb.from(table).insert(rec));}
+  else {({error}=await sb.from(table).insert(rec));} // created_by é preenchido pelo banco (default auth.uid())
   if(error){ toast(error.message,'err'); return false; }
   closeModal();toast(okMsg,'ok');render();
   return true;
