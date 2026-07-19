@@ -2,7 +2,8 @@
 
 Painel interno do escritório com **login por colaborador**, dados **compartilhados ao vivo**
 entre todos (nada se perde) e **acesso por setor**. Feito em um único arquivo
-(`painel.html`) com backend real no **Supabase** (banco de dados + autenticação na nuvem).
+(`index.html` — a página principal do site) com backend real no **Supabase**
+(banco de dados + autenticação na nuvem).
 
 ---
 
@@ -62,18 +63,19 @@ em qualquer dispositivo, atualizando ao vivo.
 
 ## 4. Como publicar (deixar no ar)
 
-O painel é o arquivo **`painel.html`** — um único arquivo, funciona em qualquer hospedagem estática.
+O painel é o arquivo **`index.html`** (a página principal) — um único arquivo, funciona em
+qualquer hospedagem estática.
 
 **Opção A — GitHub Pages (grátis):**
 1. No GitHub: *Settings → Pages*.
 2. Em *Source*, selecione a branch e a pasta raiz.
-3. O painel ficará em `https://<seu-usuario>.github.io/Record-Conecta/painel.html`.
-
-> Para abrir direto na raiz (`/`), é possível renomear `painel.html` para `index.html`
-> (isso substitui a página atual). Me avise se quiser que eu faça essa troca.
+3. O painel abrirá direto no endereço principal: `https://<seu-usuario>.github.io/Record-Conecta/`.
 
 **Opção B — qualquer host estático** (Vercel, Netlify, hospedagem do escritório):
-basta subir o `painel.html`.
+basta subir o `index.html`.
+
+> A página antiga foi preservada em `site-antigo.html` (continua acessível, mas não abre mais
+> automaticamente na frente).
 
 ---
 
@@ -82,7 +84,7 @@ basta subir o `painel.html`.
 - **Projeto:** `record-conecta-dashboard` (novo, separado — o projeto "record dashboard" **não foi tocado**).
 - **Região:** São Paulo (sa-east-1).
 - **URL da API:** `https://cwrafyrozbbtbzwolhwy.supabase.co`
-- A chave pública (*publishable key*) já está embutida no `painel.html`. Ela é feita para
+- A chave pública (*publishable key*) já está embutida no `index.html`. Ela é feita para
   ficar no navegador — a proteção real dos dados é o RLS descrito acima, não a chave.
 
 **Tabelas:** `profiles`, `eventos`, `resultados_reuniao`, `relatorios_performance`,
@@ -101,4 +103,4 @@ segurança (só a gerência aciona; a senha nunca fica exposta no navegador).
 ## 6. Observações
 - Requer conexão com a internet (usa o Supabase na nuvem).
 - Funciona em celular e computador (layout responsivo).
-- Os arquivos antigos (`index.html`, `celular*.html`) são a versão anterior e continuam intactos.
+- Os arquivos antigos (`site-antigo.html`, `celular*.html`) são a versão anterior e continuam intactos.
