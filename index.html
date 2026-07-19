@@ -232,6 +232,7 @@ nav{flex:1;padding:12px 10px;overflow-y:auto}
       <button class="nav-item" data-view="treinamentos"><span class="ic">✦</span> Treinamentos</button>
       <button class="nav-item" data-view="resultados"><span class="ic">✎</span> Resultados</button>
       <div class="nav-sec">Pessoal</div>
+      <button class="nav-item" data-view="agenda"><span class="ic">🗓</span> Minha Agenda</button>
       <button class="nav-item" data-view="setor"><span class="ic">◐</span> <span id="nav-setor-label">Meu Setor</span></button>
       <div class="nav-sec ger-only hidden">Gerência</div>
       <button class="nav-item ger-only hidden" data-view="gerencia"><span class="ic">★</span> Painel de Gerência</button>
@@ -342,6 +343,7 @@ const VIEW_META = {
   treinamentos:['Treinamentos','Capacitações agendadas para a equipe'],
   resultados:['Resultados de Reunião','Registros e decisões das reuniões'],
   setor:['Meu Setor','Sua performance, exigências e feedbacks'],
+  agenda:['Minha Agenda','Sua Google Agenda integrada — visível só para você'],
   gerencia:['Painel de Gerência','Plano estratégico e gestão da equipe'],
 };
 function go(view){
@@ -369,7 +371,61 @@ async function render(){
   if(v==='treinamentos') return renderEventos(c,'treinamento');
   if(v==='resultados') return renderResultados(c);
   if(v==='setor') return renderSetor(c);
+  if(v==='agenda') return renderAgenda(c);
   if(v==='gerencia') return renderGerencia(c);
+}
+
+/* ============================================================
+   MINHA AGENDA (Google Calendar embutido — privado por usuário)
+============================================================ */
+function buildAgendaUrl(inp){
+  inp=(inp||'').trim();
+  if(!inp) return '';
+  if(inp.includes('calendar.google.com')){
+    // se colaram um <iframe ... src="...">, extrai o src
+    const m=inp.match(/src=["']?([^"'\s>]+)/i);
+    return m?m[1].replace(/&amp;/g,'&'):inp;
+  }
+  if(inp.includes('@')) return 'https://calendar.google.com/calendar/embed?src='+encodeURIComponent(inp)+'&ctz=America%2FSao_Paulo&mode=WEEK';
+  return inp;
+}
+function renderAgenda(c){
+  const url=state.profile.google_agenda_url;
+  if(url){
+    c.innerHTML=`<div class="section-head"><h3>Minha Agenda (Google)</h3><button class="btn btn-ghost btn-sm" id="cfgAg">⚙ Configurar</button></div>
+      <div class="card" style="padding:0;overflow:hidden"><iframe src="${esc(url)}" style="border:0;width:100%;height:72vh;display:block" scrolling="no"></iframe></div>
+      <div class="card-sub" style="margin-top:10px;color:var(--muted)">🔒 Visível só para você. Se aparecer vazio ou "sem acesso", faça login na sua Conta Google (a mesma dona da agenda) neste navegador.</div>`;
+    $('#cfgAg').onclick=()=>agendaConfigModal();
+  } else {
+    c.innerHTML=`<div class="card"><h3>Conectar sua Google Agenda</h3>
+      <div class="card-sub" style="margin-bottom:14px">Traga seus compromissos do Google para dentro do painel. Fica visível só para você.</div>
+      <div class="fg"><label>Endereço da sua agenda (e-mail do Google) ou link de incorporação</label>
+      <input id="ag_in" placeholder="seu-email@gmail.com  ou  link do 'Incorporar calendário'"></div>
+      <button class="btn btn-primary btn-sm" id="ag_save" style="margin-top:12px">Conectar agenda</button>
+      <div class="card-sub" style="margin-top:16px;line-height:1.6">
+        <b>Como pegar o link:</b> abra o Google Agenda no computador → <b>Configurações</b> (engrenagem) →
+        clique na sua agenda em "Configurações das minhas agendas" → <b>Integrar agenda</b> →
+        copie o <b>"ID da agenda"</b> (parece um e-mail) ou o código de <b>"Incorporar código"</b> e cole aqui.
+      </div></div>`;
+    $('#ag_save').onclick=()=>saveAgenda($('#ag_in').value);
+  }
+}
+function agendaConfigModal(){
+  openModal(`<div class="modal-h"><h3>Configurar Minha Agenda</h3></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="fg"><label>E-mail da agenda Google ou link de incorporação</label><input id="agm_in" value="${esc(state.profile.google_agenda_url||'')}"></div>
+      <div class="card-sub" style="line-height:1.5">Cole o e-mail da sua Conta Google, ou o link/código de "Incorporar calendário" do Google Agenda. Deixe em branco e salve para desconectar.</div>
+    </div></div>
+    <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="agm_save">Salvar</button></div>`);
+  $('#agm_save').onclick=()=>{closeModal();saveAgenda($('#agm_in').value);};
+}
+async function saveAgenda(raw){
+  const url=buildAgendaUrl(raw);
+  const {error}=await sb.from('profiles').update({google_agenda_url:url}).eq('id',state.profile.id);
+  if(error)return toast(error.message,'err');
+  state.profile.google_agenda_url=url;
+  toast(url?'Agenda conectada':'Agenda desconectada','ok');
+  renderAgenda($('#content'));
 }
 function loadingCard(c){ c.innerHTML='<div class="card"><div class="empty">Carregando…</div></div>'; }
 function emptyBox(txt,ic='◇'){return `<div class="empty"><span class="em-ic">${ic}</span>${esc(txt)}</div>`;}
