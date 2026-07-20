@@ -1,7 +1,7 @@
 /* Record Conecta — Service Worker (PWA)
    Cacheia a "casca" do app para abrir rápido/offline.
    Os dados (Supabase, Google, fontes) sempre vão pela rede. */
-const CACHE = 'record-conecta-v12';
+const CACHE = 'record-conecta-v13';
 const SHELL = [
   './',
   './index.html',
@@ -35,8 +35,8 @@ self.addEventListener('fetch', (e) => {
   // Só tratamos arquivos do próprio app. Supabase/Google/CDN vão direto pela rede.
   if (url.origin !== location.origin) return;
   if (req.mode === 'navigate') {
-    // Rede primeiro; se cair, abre a versão em cache.
-    e.respondWith(fetch(req).catch(() => caches.match('./index.html')));
+    // Sempre busca o HTML mais recente (sem cache); se cair, abre a versão salva.
+    e.respondWith(fetch(req, { cache: 'no-store' }).catch(() => caches.match('./index.html')));
     return;
   }
   e.respondWith(caches.match(req).then((r) => r || fetch(req)));
