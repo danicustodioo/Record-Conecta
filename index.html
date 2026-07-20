@@ -701,11 +701,11 @@ async function renderResultados(c){
       return `<div class="item" ${pend?'style="border-left:3px solid var(--warn);background:#fffdf6"':''}><div class="it-top"><div>
         <div class="it-title">${pend?'⚠️ ':''}${esc(r.titulo)}</div>
         <div class="it-meta"><span>🗓 ${fmtDate(r.data)}</span><span class="chip">${r.tipo==='cliente'?'Cliente':'Interna'}</span>${r.cliente?`<span>🏢 ${esc(r.cliente)}</span>`:''}${r.participantes?`<span>👥 ${esc(r.participantes)}</span>`:''}${pend?'<span class="chip pri-alta">Aguardando resultado</span>':''}</div>
-      </div><div style="display:flex;gap:6px;align-items:center">${depChip(r.departamento)}${owner?`<div class="row-actions"><button class="icon-btn" data-rec="${r.id}" title="Gravar reunião">🎙</button><button class="icon-btn" data-edit="${r.id}">✎</button><button class="icon-btn" data-del="${r.id}">🗑</button></div>`:''}</div></div>
+      </div><div style="display:flex;gap:6px;align-items:center">${depChip(r.departamento)}${owner?`<div class="row-actions"><button class="icon-btn" data-edit="${r.id}">✎</button><button class="icon-btn" data-del="${r.id}">🗑</button></div>`:''}</div></div>
       ${r.resumo?`<div class="it-body"><b>Resumo:</b> ${esc(r.resumo)}</div>`:''}
       ${r.decisoes?`<div class="it-body"><b>Decisões:</b> ${esc(r.decisoes)}</div>`:''}
       ${r.proximos_passos?`<div class="it-body"><b>Próximos passos:</b> ${esc(r.proximos_passos)}</div>`:''}
-      ${pend?`<div style="margin-top:10px"><button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button></div>`:''}</div>`;
+      ${owner?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-rec="${r.id}">🎙 Gravar reunião</button>${pend?`<button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button>`:''}</div>`:''}</div>`;
     }).join('');
     box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.edit)));
     box.querySelectorAll('[data-fill]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.fill)));
