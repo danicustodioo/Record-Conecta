@@ -701,7 +701,7 @@ async function renderResultados(c){
       return `<div class="item" ${pend?'style="border-left:3px solid var(--warn);background:#fffdf6"':''}><div class="it-top"><div>
         <div class="it-title">${pend?'⚠️ ':''}${esc(r.titulo)}</div>
         <div class="it-meta"><span>🗓 ${fmtDate(r.data)}</span><span class="chip">${r.tipo==='cliente'?'Cliente':'Interna'}</span>${r.cliente?`<span>🏢 ${esc(r.cliente)}</span>`:''}${r.participantes?`<span>👥 ${esc(r.participantes)}</span>`:''}${pend?'<span class="chip pri-alta">Aguardando resultado</span>':''}</div>
-      </div><div style="display:flex;gap:6px;align-items:center">${depChip(r.departamento)}${owner?`<div class="row-actions"><button class="icon-btn" data-edit="${r.id}">✎</button><button class="icon-btn" data-del="${r.id}">🗑</button></div>`:''}</div></div>
+      </div><div style="display:flex;gap:6px;align-items:center">${depChip(r.departamento)}${owner?`<div class="row-actions"><button class="icon-btn" data-rec="${r.id}" title="Gravar reunião">🎙</button><button class="icon-btn" data-edit="${r.id}">✎</button><button class="icon-btn" data-del="${r.id}">🗑</button></div>`:''}</div></div>
       ${r.resumo?`<div class="it-body"><b>Resumo:</b> ${esc(r.resumo)}</div>`:''}
       ${r.decisoes?`<div class="it-body"><b>Decisões:</b> ${esc(r.decisoes)}</div>`:''}
       ${r.proximos_passos?`<div class="it-body"><b>Próximos passos:</b> ${esc(r.proximos_passos)}</div>`:''}
@@ -709,6 +709,7 @@ async function renderResultados(c){
     }).join('');
     box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.edit)));
     box.querySelectorAll('[data-fill]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.fill)));
+    box.querySelectorAll('[data-rec]').forEach(b=>b.onclick=()=>gravarModal(rows.find(z=>z.id===b.dataset.rec)));
     box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delRow('resultados_reuniao',b.dataset.del,'Resultado excluído'));
   };
   $('#fTipo').onchange=draw;$('#fDep2').onchange=draw;draw();
@@ -737,6 +738,86 @@ function resultadoModal(r=null){
       decisoes:$('#r_dec').value.trim(),proximos_passos:$('#r_prox').value.trim()};
     if(!rec.titulo)return toast('Informe um título.','err');
     await saveRow('resultados_reuniao',r,rec,'Resultado salvo');
+  };
+}
+/* ---- Gravar reunião + Gerar ata por IA ---- */
+function gravarModal(r){
+  if(!r) return;
+  let mediaRecorder=null, chunks=[], stream=null, timerInt=null, seconds=0, audioBlob=null;
+  openModal(`<div class="modal-h"><h3>🎙 Gravar reunião</h3></div>
+    <div class="modal-b" style="text-align:center">
+      <div class="card-sub" style="margin-bottom:6px">${esc(r.titulo)}</div>
+      <div id="rec_time" style="font-size:36px;font-family:'Playfair Display',serif;color:var(--navy)">00:00</div>
+      <div id="rec_status" class="card-sub">Toque em Gravar para começar</div>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap">
+        <button class="btn btn-danger btn-sm" id="rec_start">● Gravar</button>
+        <button class="btn btn-ghost btn-sm hidden" id="rec_stop">■ Parar</button>
+      </div>
+      <audio id="rec_audio" controls class="hidden" style="width:100%;margin-top:16px"></audio>
+      <div id="rec_actions" class="hidden" style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="rec_saveaudio">💾 Salvar áudio</button>
+        <button class="btn btn-gold btn-sm" id="rec_ata">🤖 Gerar ata por IA</button>
+      </div>
+      <div id="rec_msg" class="card-sub" style="margin-top:12px"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost btn-sm" id="rec_close">Fechar</button></div>`);
+  const fmt=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+  const cleanup=()=>{ try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch(e){} clearInterval(timerInt); };
+  $('#rec_close').onclick=()=>{ cleanup(); closeModal(); };
+  $('#rec_start').onclick=async ()=>{
+    if(!navigator.mediaDevices||!window.MediaRecorder){ toast('Seu aparelho não suporta gravação aqui.','err'); return; }
+    try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ toast('Permita o microfone para gravar.','err'); return; }
+    chunks=[];
+    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus'
+      : (MediaRecorder.isTypeSupported('audio/webm')?'audio/webm'
+      : (MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':''));
+    try{ mediaRecorder=new MediaRecorder(stream, mime?{mimeType:mime,audioBitsPerSecond:32000}:{}); }
+    catch(e){ mediaRecorder=new MediaRecorder(stream); }
+    mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    mediaRecorder.onstop=()=>{
+      audioBlob=new Blob(chunks,{type:(mediaRecorder.mimeType||'audio/webm')});
+      $('#rec_audio').src=URL.createObjectURL(audioBlob); $('#rec_audio').classList.remove('hidden');
+      $('#rec_actions').classList.remove('hidden');
+      try{ stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+    };
+    mediaRecorder.start();
+    seconds=0; $('#rec_time').textContent='00:00'; $('#rec_status').textContent='● Gravando…';
+    timerInt=setInterval(()=>{ seconds++; $('#rec_time').textContent=fmt(seconds); },1000);
+    $('#rec_start').classList.add('hidden'); $('#rec_stop').classList.remove('hidden');
+    $('#rec_audio').classList.add('hidden'); $('#rec_actions').classList.add('hidden');
+  };
+  $('#rec_stop').onclick=()=>{
+    if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
+    clearInterval(timerInt); $('#rec_status').textContent='Gravação finalizada';
+    $('#rec_stop').classList.add('hidden'); $('#rec_start').classList.remove('hidden'); $('#rec_start').textContent='● Regravar';
+  };
+  const uploadAudio=async ()=>{
+    const ext=(audioBlob.type.includes('mp4'))?'mp4':'webm';
+    const path=r.id+'/'+Date.now()+'.'+ext;
+    const {error}=await sb.storage.from('reunioes-audio').upload(path, audioBlob, {contentType:audioBlob.type, upsert:true});
+    if(error) throw error;
+    await sb.from('resultados_reuniao').update({audio_path:path}).eq('id',r.id);
+    return path;
+  };
+  $('#rec_saveaudio').onclick=async ()=>{
+    if(!audioBlob) return; $('#rec_msg').textContent='Enviando áudio…';
+    try{ await uploadAudio(); $('#rec_msg').textContent='Áudio salvo ✅'; toast('Áudio salvo','ok'); }
+    catch(e){ $('#rec_msg').textContent=''; toast('Erro ao salvar: '+(e.message||e),'err'); }
+  };
+  $('#rec_ata').onclick=async ()=>{
+    if(!audioBlob) return; $('#rec_ata').disabled=true; $('#rec_msg').textContent='Enviando e gerando a ata… (pode levar 1 a 2 min)';
+    try{
+      const path=await uploadAudio();
+      const {data:{session}}=await sb.auth.getSession();
+      const res=await fetch(`${SUPABASE_URL}/functions/v1/gerar-ata`,{method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
+        body:JSON.stringify({ resultado_id:r.id, audio_path:path })});
+      const j=await res.json().catch(()=>({error:'Resposta inválida'}));
+      if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
+      $('#rec_msg').textContent='Ata gerada! ✅'; toast('Ata gerada com sucesso','ok');
+      cleanup(); closeModal(); render();
+    }catch(e){ $('#rec_ata').disabled=false; $('#rec_msg').textContent=''; toast('Erro: '+(e.message||e),'err'); }
   };
 }
 
