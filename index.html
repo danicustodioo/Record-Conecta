@@ -705,7 +705,7 @@ async function renderResultados(c){
       ${r.resumo?`<div class="it-body"><b>Resumo:</b> ${esc(r.resumo)}</div>`:''}
       ${r.decisoes?`<div class="it-body"><b>Decisões:</b> ${esc(r.decisoes)}</div>`:''}
       ${r.proximos_passos?`<div class="it-body"><b>Próximos passos:</b> ${esc(r.proximos_passos)}</div>`:''}
-      ${owner?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-rec="${r.id}">🎙 Gravar reunião</button>${r.audio_path?`<button class="btn btn-gold btn-sm" data-ataudio="${r.id}">🤖 Gerar ata do áudio salvo</button>`:''}${pend?`<button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button>`:''}</div>`:''}</div>`;
+      ${owner?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-rec="${r.id}">🎙 Gravar reunião</button>${(r.audio_path||(r.transcricao||'').trim())?`<button class="btn btn-gold btn-sm" data-ataudio="${r.id}">🤖 Gerar ata do áudio salvo</button>`:''}${pend?`<button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button>`:''}</div>`:''}</div>`;
     }).join('');
     box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.edit)));
     box.querySelectorAll('[data-fill]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.fill)));
@@ -865,13 +865,26 @@ async function processAndGenerateAta(r, blob, setStatus){
   return j;
 }
 async function gerarAtaSalvo(r){
-  if(!r||!r.audio_path){ toast('Não há áudio salvo nesta reunião.','err'); return; }
-  openModal(`<div class="modal-h"><h3>🤖 Gerando ata</h3></div><div class="modal-b" style="text-align:center"><div style="font-size:30px;margin:6px 0">⏳</div><div id="ga_status" class="card-sub">Baixando o áudio salvo…</div></div>`);
+  if(!r){ return; }
+  if(!r.audio_path && !(r.transcricao||'').trim()){ toast('Não há áudio nem transcrição salvos nesta reunião.','err'); return; }
+  openModal(`<div class="modal-h"><h3>🤖 Gerando ata</h3></div><div class="modal-b" style="text-align:center"><div style="font-size:30px;margin:6px 0">⏳</div><div id="ga_status" class="card-sub">Iniciando…</div></div>`);
   const setStatus=m=>{ const e=$('#ga_status'); if(e) e.textContent=m; };
   try{
-    const {data:blob,error}=await sb.storage.from('reunioes-audio').download(r.audio_path);
-    if(error||!blob) throw new Error('Não consegui baixar o áudio salvo.');
-    await processAndGenerateAta(r, blob, setStatus);
+    if((r.transcricao||'').trim()){
+      // Já tem transcrição -> gera a ata direto dela (rápido, sem reprocessar áudio)
+      setStatus('Escrevendo a ata a partir da transcrição salva…');
+      const {data:{session}}=await sb.auth.getSession();
+      const res=await fetch(`${SUPABASE_URL}/functions/v1/gerar-ata`,{method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
+        body:JSON.stringify({ resultado_id:r.id, regenerate:true })});
+      const j=await res.json().catch(()=>({error:'Resposta inválida'}));
+      if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
+    } else {
+      setStatus('Baixando o áudio salvo…');
+      const {data:blob,error}=await sb.storage.from('reunioes-audio').download(r.audio_path);
+      if(error||!blob) throw new Error('Não consegui baixar o áudio salvo.');
+      await processAndGenerateAta(r, blob, setStatus);
+    }
     closeModal(); toast('Ata gerada! ✅','ok'); render();
   }catch(e){ closeModal(); toast('Erro: '+(e.message||e),'err'); }
 }
