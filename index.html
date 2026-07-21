@@ -831,7 +831,7 @@ async function splitAudioToWavChunks(blob, chunkSec){
   const AC=window.AudioContext||window.webkitAudioContext;
   const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
   if(!AC||!OAC) throw new Error('Seu navegador não suporta o processamento de áudio.');
-  const ac=new AC();
+  let ac; try{ ac=new AC({sampleRate:16000}); }catch(e){ ac=new AC(); }
   const decoded=await ac.decodeAudioData(await blob.arrayBuffer());
   try{ ac.close&&ac.close(); }catch(e){}
   const sr=16000, dur=decoded.duration, chunks=[];
@@ -1339,16 +1339,12 @@ window.closeModal=closeModal;
    PWA — instalação e service worker
 ============================================================ */
 if ('serviceWorker' in navigator) {
-  let _reloading=false;
-  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
-    if(_reloading) return; _reloading=true; window.location.reload();
-  });
+  // Sem recarregamento automático (evita loop). O HTML já vem sempre atualizado (no-store),
+  // e o service worker novo assume no próximo abrir do app.
   window.addEventListener('load', async ()=>{
     try{
-      // updateViaCache:'none' => o navegador SEMPRE busca o sw.js novo (nunca do cache)
       const reg=await navigator.serviceWorker.register('./sw.js', { updateViaCache:'none' });
       reg.update();
-      // verifica atualização ao voltar pro app e de hora em hora
       document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') reg.update(); });
       setInterval(()=>reg.update(), 60*60*1000);
     }catch(e){}
