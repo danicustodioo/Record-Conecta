@@ -745,12 +745,17 @@ function resultadoModal(r=null){
 /* ---- Gravar reunião + Gerar ata por IA ---- */
 function gravarModal(r){
   if(!r) return;
-  let mediaRecorder=null, chunks=[], stream=null, timerInt=null, seconds=0, audioBlob=null;
+  let mediaRecorder=null, chunks=[], stream=null, timerInt=null, seconds=0, audioBlob=null, wakeLock=null;
+  const acquireWake=async ()=>{ try{ if('wakeLock' in navigator){ wakeLock=await navigator.wakeLock.request('screen'); } }catch(e){} };
+  const releaseWake=()=>{ try{ if(wakeLock){ wakeLock.release(); wakeLock=null; } }catch(e){} };
+  const onVis=()=>{ if(document.visibilityState==='visible' && mediaRecorder && mediaRecorder.state==='recording') acquireWake(); };
+  document.addEventListener('visibilitychange', onVis);
   openModal(`<div class="modal-h"><h3>🎙 Gravar reunião</h3></div>
     <div class="modal-b" style="text-align:center">
       <div class="card-sub" style="margin-bottom:6px">${esc(r.titulo)}</div>
       <div id="rec_time" style="font-size:36px;font-family:'Playfair Display',serif;color:var(--navy)">00:00</div>
       <div id="rec_status" class="card-sub">Toque em Gravar para começar</div>
+      <div class="card-sub" style="margin-top:6px;font-size:12px;color:var(--warn)">⚠️ Mantenha a tela ligada e o app aberto durante a reunião — se a tela apagar, o celular pode interromper a gravação.</div>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap">
         <button class="btn btn-danger btn-sm" id="rec_start">● Gravar</button>
         <button class="btn btn-ghost btn-sm hidden" id="rec_stop">■ Parar</button>
@@ -764,7 +769,7 @@ function gravarModal(r){
     </div>
     <div class="modal-f"><button class="btn btn-ghost btn-sm" id="rec_close">Fechar</button></div>`);
   const fmt=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
-  const cleanup=()=>{ try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch(e){} clearInterval(timerInt); };
+  const cleanup=()=>{ try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch(e){} clearInterval(timerInt); releaseWake(); document.removeEventListener('visibilitychange', onVis); };
   $('#rec_close').onclick=()=>{ cleanup(); closeModal(); };
   $('#rec_start').onclick=async ()=>{
     if(!navigator.mediaDevices||!window.MediaRecorder){ toast('Seu aparelho não suporta gravação aqui.','err'); return; }
@@ -778,12 +783,18 @@ function gravarModal(r){
     catch(e){ mediaRecorder=new MediaRecorder(stream); }
     mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
     mediaRecorder.onstop=()=>{
+      releaseWake(); clearInterval(timerInt);
       audioBlob=new Blob(chunks,{type:(mediaRecorder.mimeType||'audio/webm')});
       $('#rec_audio').src=URL.createObjectURL(audioBlob); $('#rec_audio').classList.remove('hidden');
       $('#rec_actions').classList.remove('hidden');
+      $('#rec_stop').classList.add('hidden'); $('#rec_start').classList.remove('hidden'); $('#rec_start').textContent='● Regravar';
       try{ stream.getTracks().forEach(t=>t.stop()); }catch(e){}
     };
-    mediaRecorder.start();
+    // Se o sistema encerrar a captura (tela apagou/app em segundo plano), finaliza salvando o que já foi gravado
+    stream.getAudioTracks().forEach(t=>{ t.onended=()=>{ if(mediaRecorder&&mediaRecorder.state==='recording'){ $('#rec_status').textContent='⚠️ Gravação interrompida pelo sistema — salvando o trecho gravado…'; try{ mediaRecorder.stop(); }catch(e){} } }; });
+    // timeslice: descarrega o áudio a cada 5s, para não perder nada se houver interrupção
+    mediaRecorder.start(5000);
+    acquireWake();
     seconds=0; $('#rec_time').textContent='00:00'; $('#rec_status').textContent='● Gravando…';
     timerInt=setInterval(()=>{ seconds++; $('#rec_time').textContent=fmt(seconds); },1000);
     $('#rec_start').classList.add('hidden'); $('#rec_stop').classList.remove('hidden');
