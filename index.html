@@ -971,7 +971,19 @@ async function gerarPdfAta(r){
       doc.text(p+'/'+pages,PW-M,PH-24,{align:'right'});
     }
     const safe=(r.titulo||'reuniao').replace(/[^\p{L}\p{N} \-_]/gu,'').trim().slice(0,60)||'reuniao';
-    doc.save('Ata - '+safe+'.pdf');
+    const fname='Ata - '+safe+'.pdf';
+    const blob=doc.output('blob');
+    const file=new File([blob],fname,{type:'application/pdf'});
+    // No celular: abre a folhinha de compartilhar (WhatsApp, e-mail, Arquivos…)
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file],title:fname,text:'Ata da reunião'}); toast('Ata pronta pra enviar 📄','ok'); return; }
+      catch(err){ if(err && err.name==='AbortError'){ return; } /* se falhar, cai pro download abaixo */ }
+    }
+    // Computador (e fallback): abre/baixa o PDF
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=fname; a.rel='noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>{ try{ window.open(url,'_blank'); }catch(_){} setTimeout(()=>URL.revokeObjectURL(url),60000); },300);
     toast('PDF pronto! 📄','ok');
   }catch(e){ toast('Erro ao gerar PDF: '+(e.message||e),'err'); }
 }
