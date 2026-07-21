@@ -705,12 +705,13 @@ async function renderResultados(c){
       ${r.resumo?`<div class="it-body"><b>Resumo:</b> ${esc(r.resumo)}</div>`:''}
       ${r.decisoes?`<div class="it-body"><b>Decisões:</b> ${esc(r.decisoes)}</div>`:''}
       ${r.proximos_passos?`<div class="it-body"><b>Próximos passos:</b> ${esc(r.proximos_passos)}</div>`:''}
-      ${owner?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-rec="${r.id}">🎙 Gravar reunião</button>${(r.audio_path||(r.transcricao||'').trim())?`<button class="btn btn-gold btn-sm" data-ataudio="${r.id}">🤖 Gerar ata do áudio salvo</button>`:''}${pend?`<button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button>`:''}</div>`:''}</div>`;
+      ${owner?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-rec="${r.id}">🎙 Gravar reunião</button>${(r.audio_path||(r.transcricao||'').trim())?`<button class="btn btn-gold btn-sm" data-ataudio="${r.id}">🤖 Gerar ata do áudio salvo</button>`:''}${pend?`<button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button>`:`<button class="btn btn-ghost btn-sm" data-pdf="${r.id}">📄 Gerar PDF da ata</button>`}</div>`:''}</div>`;
     }).join('');
     box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.edit)));
     box.querySelectorAll('[data-fill]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.fill)));
     box.querySelectorAll('[data-rec]').forEach(b=>b.onclick=()=>gravarModal(rows.find(z=>z.id===b.dataset.rec)));
     box.querySelectorAll('[data-ataudio]').forEach(b=>b.onclick=()=>gerarAtaSalvo(rows.find(z=>z.id===b.dataset.ataudio)));
+    box.querySelectorAll('[data-pdf]').forEach(b=>b.onclick=()=>gerarPdfAta(rows.find(z=>z.id===b.dataset.pdf)));
     box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delRow('resultados_reuniao',b.dataset.del,'Resultado excluído'));
   };
   $('#fTipo').onchange=draw;$('#fDep2').onchange=draw;draw();
@@ -887,6 +888,92 @@ async function gerarAtaSalvo(r){
     }
     closeModal(); toast('Ata gerada! ✅','ok'); render();
   }catch(e){ closeModal(); toast('Erro: '+(e.message||e),'err'); }
+}
+
+/* ============================================================
+   PDF DA ATA (para enviar ao cliente)
+============================================================ */
+let _jspdfLoaded=false;
+function loadJsPDF(){
+  return new Promise((resolve,reject)=>{
+    if(_jspdfLoaded && window.jspdf && window.jspdf.jsPDF) return resolve(window.jspdf.jsPDF);
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+    s.onload=()=>{ _jspdfLoaded=true; (window.jspdf&&window.jspdf.jsPDF)?resolve(window.jspdf.jsPDF):reject(new Error('jsPDF não carregou')); };
+    s.onerror=()=>reject(new Error('Não consegui carregar o gerador de PDF (sem internet?)'));
+    document.head.appendChild(s);
+  });
+}
+function imgToDataUrl(src){
+  return new Promise((resolve)=>{
+    const img=new Image();
+    img.crossOrigin='anonymous';
+    img.onload=()=>{ try{ const cv=document.createElement('canvas'); cv.width=img.naturalWidth; cv.height=img.naturalHeight; cv.getContext('2d').drawImage(img,0,0); resolve({url:cv.toDataURL('image/png'),w:img.naturalWidth,h:img.naturalHeight}); }catch(_){ resolve(null); } };
+    img.onerror=()=>resolve(null);
+    img.src=src;
+  });
+}
+async function gerarPdfAta(r){
+  if(!r){ return; }
+  const has=(r.resumo||'').trim()||(r.decisoes||'').trim()||(r.proximos_passos||'').trim();
+  if(!has){ toast('Esta reunião ainda não tem ata preenchida.','err'); return; }
+  toast('Gerando PDF…','ok');
+  try{
+    const jsPDF=await loadJsPDF();
+    const doc=new jsPDF({unit:'pt',format:'a4'});
+    const PW=doc.internal.pageSize.getWidth(), PH=doc.internal.pageSize.getHeight();
+    const M=48; const maxW=PW-M*2;
+    const NAVY=[20,40,64], GOLD=[176,141,87], INK=[34,34,34], GREY=[110,110,110];
+    // Cabeçalho (faixa navy)
+    const headH=96;
+    doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]); doc.rect(0,0,PW,headH,'F');
+    let logo=null; try{ logo=await imgToDataUrl('./logo-symbol-light.png'); }catch(_){}
+    if(logo){ const lh=52, lw=lh*(logo.w/logo.h); doc.addImage(logo.url,'PNG',M,(headH-lh)/2,lw,lh); }
+    const tx=logo?M+70:M;
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.text('ATA DE REUNIÃO',tx,42);
+    doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(GOLD[0],GOLD[1],GOLD[2]);
+    doc.text('Record Assessoria Contábil',tx,64);
+    let y=headH+34;
+    // Título
+    doc.setTextColor(INK[0],INK[1],INK[2]); doc.setFont('helvetica','bold'); doc.setFontSize(15);
+    const tit=doc.splitTextToSize(r.titulo||'Reunião',maxW);
+    doc.text(tit,M,y); y+=tit.length*18+4;
+    // Meta
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(GREY[0],GREY[1],GREY[2]);
+    const meta=[];
+    if(r.data) meta.push('Data: '+fmtDate(r.data));
+    meta.push('Tipo: '+(r.tipo==='cliente'?'Reunião com cliente':'Reunião interna'));
+    if(r.cliente) meta.push('Cliente: '+r.cliente);
+    if(r.participantes) meta.push('Participantes: '+r.participantes);
+    const metaLines=doc.splitTextToSize(meta.join('   •   '),maxW);
+    doc.text(metaLines,M,y); y+=metaLines.length*14+8;
+    doc.setDrawColor(GOLD[0],GOLD[1],GOLD[2]); doc.setLineWidth(1); doc.line(M,y,PW-M,y); y+=22;
+    const ensure=(need)=>{ if(y+need>PH-M){ doc.addPage(); y=M+10; } };
+    const section=(title,body)=>{
+      if(!(body||'').trim()) return;
+      ensure(40);
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(NAVY[0],NAVY[1],NAVY[2]);
+      doc.text(title,M,y); y+=18;
+      doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(INK[0],INK[1],INK[2]);
+      const lines=doc.splitTextToSize(body.trim(),maxW);
+      for(const ln of lines){ ensure(16); doc.text(ln,M,y); y+=15; }
+      y+=14;
+    };
+    section('Resumo',r.resumo);
+    section('Decisões',r.decisoes);
+    section('Próximos passos',r.proximos_passos);
+    // Rodapé em todas as páginas
+    const pages=doc.internal.getNumberOfPages();
+    for(let p=1;p<=pages;p++){
+      doc.setPage(p);
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(GREY[0],GREY[1],GREY[2]);
+      doc.text('Record Assessoria Contábil — Ata gerada pelo Record Conecta',M,PH-24);
+      doc.text(p+'/'+pages,PW-M,PH-24,{align:'right'});
+    }
+    const safe=(r.titulo||'reuniao').replace(/[^\p{L}\p{N} \-_]/gu,'').trim().slice(0,60)||'reuniao';
+    doc.save('Ata - '+safe+'.pdf');
+    toast('PDF pronto! 📄','ok');
+  }catch(e){ toast('Erro ao gerar PDF: '+(e.message||e),'err'); }
 }
 
 /* ============================================================
