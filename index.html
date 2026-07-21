@@ -807,32 +807,73 @@ function gravarModal(r){
     catch(e){ $('#rec_msg').textContent=''; toast('Erro ao salvar: '+(e.message||e),'err'); }
   };
   $('#rec_ata').onclick=async ()=>{
-    if(!audioBlob) return; $('#rec_ata').disabled=true; $('#rec_msg').textContent='Enviando e gerando a ata… (pode levar 1 a 2 min)';
+    if(!audioBlob) return; $('#rec_ata').disabled=true;
+    const setStatus=m=>{ $('#rec_msg').textContent=m; };
     try{
-      const path=await uploadAudio();
-      const {data:{session}}=await sb.auth.getSession();
-      const res=await fetch(`${SUPABASE_URL}/functions/v1/gerar-ata`,{method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
-        body:JSON.stringify({ resultado_id:r.id, audio_path:path })});
-      const j=await res.json().catch(()=>({error:'Resposta inválida'}));
-      if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
-      $('#rec_msg').textContent='Ata gerada! ✅'; toast('Ata gerada com sucesso','ok');
+      await uploadAudio(); // guarda o áudio original e registra o caminho
+      await processAndGenerateAta(r, audioBlob, setStatus);
+      setStatus('Ata gerada! ✅'); toast('Ata gerada com sucesso','ok');
       cleanup(); closeModal(); render();
-    }catch(e){ $('#rec_ata').disabled=false; $('#rec_msg').textContent=''; toast('Erro: '+(e.message||e),'err'); }
+    }catch(e){ $('#rec_ata').disabled=false; setStatus(''); toast('Erro: '+(e.message||e),'err'); }
   };
+}
+/* Divide o áudio em partes leves (WAV 16kHz mono ~5min) para caber no limite da transcrição */
+function encodeWav(buffer){
+  const sr=buffer.sampleRate, s=buffer.getChannelData(0), n=s.length;
+  const ab=new ArrayBuffer(44+n*2), dv=new DataView(ab); let p=0;
+  const wr=t=>{for(let i=0;i<t.length;i++)dv.setUint8(p++,t.charCodeAt(i));};
+  const u32=v=>{dv.setUint32(p,v,true);p+=4;}, u16=v=>{dv.setUint16(p,v,true);p+=2;};
+  wr('RIFF');u32(36+n*2);wr('WAVE');wr('fmt ');u32(16);u16(1);u16(1);u32(sr);u32(sr*2);u16(2);u16(16);wr('data');u32(n*2);
+  for(let i=0;i<n;i++){let v=Math.max(-1,Math.min(1,s[i]));dv.setInt16(p,v<0?v*0x8000:v*0x7FFF,true);p+=2;}
+  return ab;
+}
+async function splitAudioToWavChunks(blob, chunkSec){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+  if(!AC||!OAC) throw new Error('Seu navegador não suporta o processamento de áudio.');
+  const ac=new AC();
+  const decoded=await ac.decodeAudioData(await blob.arrayBuffer());
+  try{ ac.close&&ac.close(); }catch(e){}
+  const sr=16000, dur=decoded.duration, chunks=[];
+  for(let start=0; start<dur; start+=chunkSec){
+    const len=Math.min(chunkSec, dur-start);
+    const off=new OAC(1, Math.max(1,Math.ceil(len*sr)), sr);
+    const src=off.createBufferSource(); src.buffer=decoded; src.connect(off.destination); src.start(0,start,len);
+    const rendered=await off.startRendering();
+    chunks.push(new Blob([encodeWav(rendered)],{type:'audio/wav'}));
+  }
+  return chunks;
+}
+async function processAndGenerateAta(r, blob, setStatus){
+  setStatus('Preparando o áudio (dividindo em partes)…');
+  const chunks=await splitAudioToWavChunks(blob, 300); // ~5 min por parte
+  const paths=[];
+  for(let i=0;i<chunks.length;i++){
+    setStatus('Enviando parte '+(i+1)+' de '+chunks.length+'…');
+    const path=r.id+'/atas/'+Date.now()+'-'+i+'.wav';
+    const {error}=await sb.storage.from('reunioes-audio').upload(path, chunks[i], {contentType:'audio/wav', upsert:true});
+    if(error) throw new Error('Erro ao enviar parte '+(i+1)+': '+error.message);
+    paths.push(path);
+  }
+  setStatus('Transcrevendo '+chunks.length+' parte(s) e escrevendo a ata… (pode levar 1-2 min)');
+  const {data:{session}}=await sb.auth.getSession();
+  const res=await fetch(`${SUPABASE_URL}/functions/v1/gerar-ata`,{method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
+    body:JSON.stringify({ resultado_id:r.id, audio_paths:paths })});
+  const j=await res.json().catch(()=>({error:'Resposta inválida'}));
+  if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
+  return j;
 }
 async function gerarAtaSalvo(r){
   if(!r||!r.audio_path){ toast('Não há áudio salvo nesta reunião.','err'); return; }
-  toast('Gerando a ata do áudio salvo… pode levar 1-2 min ⏳','ok');
+  openModal(`<div class="modal-h"><h3>🤖 Gerando ata</h3></div><div class="modal-b" style="text-align:center"><div style="font-size:30px;margin:6px 0">⏳</div><div id="ga_status" class="card-sub">Baixando o áudio salvo…</div></div>`);
+  const setStatus=m=>{ const e=$('#ga_status'); if(e) e.textContent=m; };
   try{
-    const {data:{session}}=await sb.auth.getSession();
-    const res=await fetch(`${SUPABASE_URL}/functions/v1/gerar-ata`,{method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
-      body:JSON.stringify({ resultado_id:r.id, audio_path:r.audio_path })});
-    const j=await res.json().catch(()=>({error:'Resposta inválida'}));
-    if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
-    toast('Ata gerada! ✅','ok'); render();
-  }catch(e){ toast('Erro: '+(e.message||e),'err'); }
+    const {data:blob,error}=await sb.storage.from('reunioes-audio').download(r.audio_path);
+    if(error||!blob) throw new Error('Não consegui baixar o áudio salvo.');
+    await processAndGenerateAta(r, blob, setStatus);
+    closeModal(); toast('Ata gerada! ✅','ok'); render();
+  }catch(e){ closeModal(); toast('Erro: '+(e.message||e),'err'); }
 }
 
 /* ============================================================
