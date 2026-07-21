@@ -745,7 +745,8 @@ function resultadoModal(r=null){
 /* ---- Gravar reunião + Gerar ata por IA ---- */
 function gravarModal(r){
   if(!r) return;
-  let mediaRecorder=null, chunks=[], stream=null, timerInt=null, seconds=0, audioBlob=null, wakeLock=null;
+  let mediaRecorder=null, chunks=[], stream=null, timerInt=null, seconds=0, audioBlob=null, wakeLock=null, trechos=[];
+  const showTrechos=()=>{ const el=$('#rec_trechos'); if(!el) return; const n=trechos.length; if(n){ el.classList.remove('hidden'); el.textContent='✅ '+n+' trecho(s) guardado(s) nesta reunião'; } else { el.classList.add('hidden'); } };
   const acquireWake=async ()=>{ try{ if('wakeLock' in navigator){ wakeLock=await navigator.wakeLock.request('screen'); } }catch(e){} };
   const releaseWake=()=>{ try{ if(wakeLock){ wakeLock.release(); wakeLock=null; } }catch(e){} };
   const onVis=()=>{ if(document.visibilityState==='visible' && mediaRecorder && mediaRecorder.state==='recording') acquireWake(); };
@@ -755,15 +756,16 @@ function gravarModal(r){
       <div class="card-sub" style="margin-bottom:6px">${esc(r.titulo)}</div>
       <div id="rec_time" style="font-size:36px;font-family:'Playfair Display',serif;color:var(--navy)">00:00</div>
       <div id="rec_status" class="card-sub">Toque em Gravar para começar</div>
-      <div class="card-sub" style="margin-top:6px;font-size:12px;color:var(--warn)">⚠️ Mantenha a tela ligada e o app aberto durante a reunião — se a tela apagar, o celular pode interromper a gravação.</div>
+      <div id="rec_trechos" class="card-sub hidden" style="margin-top:6px;font-weight:600;color:var(--navy)"></div>
+      <div class="card-sub" style="margin-top:6px;font-size:12px;color:var(--warn)">⚠️ Mantenha a tela ligada e o app aberto durante a reunião. Para reuniões longas, grave em trechos: grave, toque em <b>Gravar próximo trecho</b> e, no fim, em <b>Gerar ata</b> (junta tudo numa ata só).</div>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap">
         <button class="btn btn-danger btn-sm" id="rec_start">● Gravar</button>
         <button class="btn btn-ghost btn-sm hidden" id="rec_stop">■ Parar</button>
       </div>
       <audio id="rec_audio" controls class="hidden" style="width:100%;margin-top:16px"></audio>
       <div id="rec_actions" class="hidden" style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" id="rec_saveaudio">💾 Salvar áudio</button>
-        <button class="btn btn-gold btn-sm" id="rec_ata">🤖 Gerar ata por IA</button>
+        <button class="btn btn-danger btn-sm" id="rec_more">➕ Gravar próximo trecho</button>
+        <button class="btn btn-gold btn-sm" id="rec_ata">🤖 Gerar ata (junta os trechos)</button>
       </div>
       <div id="rec_msg" class="card-sub" style="margin-top:12px"></div>
     </div>
@@ -805,28 +807,24 @@ function gravarModal(r){
     clearInterval(timerInt); $('#rec_status').textContent='Gravação finalizada';
     $('#rec_stop').classList.add('hidden'); $('#rec_start').classList.remove('hidden'); $('#rec_start').textContent='● Regravar';
   };
-  const uploadAudio=async ()=>{
-    const ext=(audioBlob.type.includes('mp4'))?'mp4':'webm';
-    const path=r.id+'/'+Date.now()+'.'+ext;
-    const {error}=await sb.storage.from('reunioes-audio').upload(path, audioBlob, {contentType:audioBlob.type, upsert:true});
-    if(error) throw error;
-    await sb.from('resultados_reuniao').update({audio_path:path}).eq('id',r.id);
-    return path;
-  };
-  $('#rec_saveaudio').onclick=async ()=>{
-    if(!audioBlob) return; $('#rec_msg').textContent='Enviando áudio…';
-    try{ await uploadAudio(); $('#rec_msg').textContent='Áudio salvo ✅'; toast('Áudio salvo','ok'); }
-    catch(e){ $('#rec_msg').textContent=''; toast('Erro ao salvar: '+(e.message||e),'err'); }
+  // "Gravar próximo trecho": guarda o áudio atual e prepara para gravar mais um (reunião longa)
+  $('#rec_more').onclick=()=>{
+    if(audioBlob){ trechos.push(audioBlob); audioBlob=null; }
+    showTrechos();
+    $('#rec_audio').classList.add('hidden'); $('#rec_actions').classList.add('hidden');
+    $('#rec_start').classList.remove('hidden'); $('#rec_start').textContent='● Gravar próximo trecho';
+    $('#rec_status').textContent='Trecho guardado. Toque para gravar o próximo.';
   };
   $('#rec_ata').onclick=async ()=>{
-    if(!audioBlob) return; $('#rec_ata').disabled=true;
+    const todos = audioBlob ? trechos.concat([audioBlob]) : trechos.slice();
+    if(!todos.length){ toast('Grave a reunião primeiro.','err'); return; }
+    $('#rec_ata').disabled=true; $('#rec_more').disabled=true;
     const setStatus=m=>{ $('#rec_msg').textContent=m; };
     try{
-      await uploadAudio(); // guarda o áudio original e registra o caminho
-      await processAndGenerateAta(r, audioBlob, setStatus);
+      await processAndGenerateAta(r, todos, setStatus);
       setStatus('Ata gerada! ✅'); toast('Ata gerada com sucesso','ok');
       cleanup(); closeModal(); render();
-    }catch(e){ $('#rec_ata').disabled=false; setStatus(''); toast('Erro: '+(e.message||e),'err'); }
+    }catch(e){ $('#rec_ata').disabled=false; $('#rec_more').disabled=false; setStatus(''); toast('Erro: '+(e.message||e),'err'); }
   };
 }
 /* Divide o áudio em partes leves (WAV 16kHz mono ~5min) para caber no limite da transcrição */
@@ -856,18 +854,22 @@ async function splitAudioToWavChunks(blob, chunkSec){
   }
   return chunks;
 }
-async function processAndGenerateAta(r, blob, setStatus){
+async function processAndGenerateAta(r, blobOrList, setStatus){
+  const trechos = Array.isArray(blobOrList) ? blobOrList : [blobOrList];
   setStatus('Preparando o áudio (dividindo em partes)…');
-  const chunks=await splitAudioToWavChunks(blob, 300); // ~5 min por parte
   const paths=[];
-  for(let i=0;i<chunks.length;i++){
-    setStatus('Enviando parte '+(i+1)+' de '+chunks.length+'…');
-    const path=r.id+'/atas/'+Date.now()+'-'+i+'.wav';
-    const {error}=await sb.storage.from('reunioes-audio').upload(path, chunks[i], {contentType:'audio/wav', upsert:true});
-    if(error) throw new Error('Erro ao enviar parte '+(i+1)+': '+error.message);
-    paths.push(path);
+  for(let t=0;t<trechos.length;t++){
+    const chunks=await splitAudioToWavChunks(trechos[t], 300); // ~5 min por parte
+    for(let i=0;i<chunks.length;i++){
+      const lbl = trechos.length>1 ? ('trecho '+(t+1)+'/'+trechos.length+' — parte '+(i+1)+'/'+chunks.length) : ('parte '+(i+1)+' de '+chunks.length);
+      setStatus('Enviando '+lbl+'…');
+      const path=r.id+'/atas/'+Date.now()+'-'+t+'-'+i+'.wav';
+      const {error}=await sb.storage.from('reunioes-audio').upload(path, chunks[i], {contentType:'audio/wav', upsert:true});
+      if(error) throw new Error('Erro ao enviar '+lbl+': '+error.message);
+      paths.push(path);
+    }
   }
-  setStatus('Transcrevendo '+chunks.length+' parte(s) e escrevendo a ata… (pode levar 1-2 min)');
+  setStatus('Transcrevendo '+paths.length+' parte(s) e escrevendo a ata… (pode levar alguns minutos)');
   const {data:{session}}=await sb.auth.getSession();
   const res=await fetch(`${SUPABASE_URL}/functions/v1/gerar-ata`,{method:'POST',
     headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
