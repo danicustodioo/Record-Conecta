@@ -705,11 +705,12 @@ async function renderResultados(c){
       ${r.resumo?`<div class="it-body"><b>Resumo:</b> ${esc(r.resumo)}</div>`:''}
       ${r.decisoes?`<div class="it-body"><b>Decisões:</b> ${esc(r.decisoes)}</div>`:''}
       ${r.proximos_passos?`<div class="it-body"><b>Próximos passos:</b> ${esc(r.proximos_passos)}</div>`:''}
-      ${owner?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-rec="${r.id}">🎙 Gravar reunião</button>${pend?`<button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button>`:''}</div>`:''}</div>`;
+      ${owner?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-rec="${r.id}">🎙 Gravar reunião</button>${r.audio_path?`<button class="btn btn-gold btn-sm" data-ataudio="${r.id}">🤖 Gerar ata do áudio salvo</button>`:''}${pend?`<button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button>`:''}</div>`:''}</div>`;
     }).join('');
     box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.edit)));
     box.querySelectorAll('[data-fill]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.fill)));
     box.querySelectorAll('[data-rec]').forEach(b=>b.onclick=()=>gravarModal(rows.find(z=>z.id===b.dataset.rec)));
+    box.querySelectorAll('[data-ataudio]').forEach(b=>b.onclick=()=>gerarAtaSalvo(rows.find(z=>z.id===b.dataset.ataudio)));
     box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delRow('resultados_reuniao',b.dataset.del,'Resultado excluído'));
   };
   $('#fTipo').onchange=draw;$('#fDep2').onchange=draw;draw();
@@ -772,7 +773,7 @@ function gravarModal(r){
     const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus'
       : (MediaRecorder.isTypeSupported('audio/webm')?'audio/webm'
       : (MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':''));
-    try{ mediaRecorder=new MediaRecorder(stream, mime?{mimeType:mime,audioBitsPerSecond:32000}:{}); }
+    try{ mediaRecorder=new MediaRecorder(stream, mime?{mimeType:mime,audioBitsPerSecond:24000}:{audioBitsPerSecond:24000}); }
     catch(e){ mediaRecorder=new MediaRecorder(stream); }
     mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
     mediaRecorder.onstop=()=>{
@@ -819,6 +820,19 @@ function gravarModal(r){
       cleanup(); closeModal(); render();
     }catch(e){ $('#rec_ata').disabled=false; $('#rec_msg').textContent=''; toast('Erro: '+(e.message||e),'err'); }
   };
+}
+async function gerarAtaSalvo(r){
+  if(!r||!r.audio_path){ toast('Não há áudio salvo nesta reunião.','err'); return; }
+  toast('Gerando a ata do áudio salvo… pode levar 1-2 min ⏳','ok');
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    const res=await fetch(`${SUPABASE_URL}/functions/v1/gerar-ata`,{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({ resultado_id:r.id, audio_path:r.audio_path })});
+    const j=await res.json().catch(()=>({error:'Resposta inválida'}));
+    if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
+    toast('Ata gerada! ✅','ok'); render();
+  }catch(e){ toast('Erro: '+(e.message||e),'err'); }
 }
 
 /* ============================================================
