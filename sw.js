@@ -1,7 +1,7 @@
 /* Record Conecta — Service Worker (PWA)
    Cacheia a "casca" do app para abrir rápido/offline.
    Os dados (Supabase, Google, fontes) sempre vão pela rede. */
-const CACHE = 'record-conecta-v21';
+const CACHE = 'record-conecta-v22';
 const SHELL = [
   './',
   './index.html',

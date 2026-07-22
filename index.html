@@ -540,7 +540,7 @@ async function renderCalendario(c){
     const d=new Date(gridStart); d.setDate(gridStart.getDate()+i);
     const other=d.getMonth()!==m;
     const list=byDay[d.toDateString()]||[];
-    const evHtml=list.slice(0,3).map(e=>`<div class="cal-ev ${e.tipo}" data-ev="${e.id}" title="${esc(e.titulo)}">${fmtTime(e.data_inicio)} ${esc(e.titulo)}</div>`).join('')
+    const evHtml=list.slice(0,3).map(e=>`<div class="cal-ev ${e.tipo}" data-ev="${e.id}" title="${esc(e.titulo)}" style="${e.status==='realizada'?'opacity:.6':''}">${e.status==='realizada'?'✓ ':''}${fmtTime(e.data_inicio)} ${esc(e.titulo)}</div>`).join('')
       +(list.length>3?`<div class="cal-more">+${list.length-3}</div>`:'');
     cells+=`<div class="cal-cell ${other?'other':''} ${d.toDateString()===today?'today':''}"><span class="dn">${d.getDate()}</span>${evHtml}</div>`;
   }
@@ -564,6 +564,9 @@ async function renderCalendario(c){
     $('#calList').innerHTML = monthEvs.length ? monthEvs.map(eventoCard).join('') : emptyBox('Nenhum evento neste mês.','▦');
     $('#calList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const ev=evs.find(z=>z.id===b.dataset.edit); if(ev) eventoModal(ev, ev.tipo);});
     $('#calList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delRow('eventos',b.dataset.del,'Evento excluído'));
+    $('#calList').querySelectorAll('[data-done]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.done,'realizada'));
+    $('#calList').querySelectorAll('[data-undo]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.undo,'agendada'));
+    $('#calList').querySelectorAll('[data-postpone]').forEach(b=>b.onclick=()=>{const ev=evs.find(z=>z.id===b.dataset.postpone); if(ev) eventoModal(ev, ev.tipo);});
   }
   $('#calPrev').onclick=()=>{state.calRef=new Date(y,m-1,1);renderCalendario(c);};
   $('#calNext').onclick=()=>{state.calRef=new Date(y,m+1,1);renderCalendario(c);};
@@ -600,23 +603,51 @@ async function renderEventos(c,tipo){
     box.innerHTML=list.map(e=>eventoCard(e)).join('');
     box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const e=evs.find(z=>z.id===b.dataset.edit);eventoModal(e,tipo);});
     box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delRow('eventos',b.dataset.del,'Evento excluído'));
+    box.querySelectorAll('[data-done]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.done,'realizada'));
+    box.querySelectorAll('[data-undo]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.undo,'agendada'));
+    box.querySelectorAll('[data-postpone]').forEach(b=>b.onclick=()=>{const e=evs.find(z=>z.id===b.dataset.postpone);eventoModal(e,tipo);});
   };
   $('#fDep').onchange=draw; $('#fWhen').onchange=draw; draw();
 }
 function eventoCard(e){
   const owner = e.created_by===state.profile.id || isGer();
-  return `<div class="item"><div class="it-top"><div>
+  const passou = new Date(e.data_inicio).getTime() < Date.now();
+  const done = e.status==='realizada';
+  const pendente = passou && !done; // já passou da hora e ainda não foi confirmada
+  const style = done ? 'style="border-left:3px solid var(--ok);background:#f2faf6"'
+              : (pendente ? 'style="border-left:3px solid var(--warn);background:#fffdf6"' : '');
+  const selo = done ? '<span class="chip" style="background:#e6f5ee;color:var(--ok)">✓ Realizada</span>'
+             : (pendente ? '<span class="chip pri-alta">⏳ Passou — confirmar</span>' : '');
+  const acoes = (owner && pendente) ? `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-gold btn-sm" data-done="${e.id}">✓ Marcar como realizada</button>
+      <button class="btn btn-ghost btn-sm" data-postpone="${e.id}">📅 Foi adiada</button></div>` : '';
+  const desfazer = (owner && done) ? `<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" data-undo="${e.id}">↩ Desfazer</button></div>` : '';
+  return `<div class="item" ${style}><div class="it-top"><div>
     <div class="it-title">${esc(e.titulo)}</div>
-    <div class="it-meta"><span>🗓 ${fmtDateTime(e.data_inicio)}${e.data_fim?' – '+fmtTime(e.data_fim):''}</span>${e.local?`<span>📍 ${esc(e.local)}</span>`:''}${e.responsavel?`<span>👤 ${esc(e.responsavel)}</span>`:''}</div>
+    <div class="it-meta"><span>🗓 ${fmtDateTime(e.data_inicio)}${e.data_fim?' – '+fmtTime(e.data_fim):''}</span>${e.local?`<span>📍 ${esc(e.local)}</span>`:''}${e.responsavel?`<span>👤 ${esc(e.responsavel)}</span>`:''}${selo}</div>
   </div><div style="display:flex;gap:6px;align-items:center">${depChip(e.departamento)}${owner?`<div class="row-actions"><button class="icon-btn" data-edit="${e.id}">✎</button><button class="icon-btn" data-del="${e.id}">🗑</button></div>`:''}</div></div>
   ${e.descricao?`<div class="it-body">${esc(e.descricao)}</div>`:''}
-  ${e.link?`<div class="it-body"><a href="${esc(e.link)}" target="_blank" style="color:#2b5aa8">🔗 ${esc(e.link)}</a></div>`:''}</div>`;
+  ${e.link?`<div class="it-body"><a href="${esc(e.link)}" target="_blank" style="color:#2b5aa8">🔗 ${esc(e.link)}</a></div>`:''}
+  ${acoes}${desfazer}</div>`;
+}
+async function marcarEvento(id, status){
+  const {error}=await sb.from('eventos').update({status}).eq('id',id);
+  if(error){ toast(error.message,'err'); return; }
+  toast(status==='realizada'?'Reunião marcada como realizada ✅':'Reaberto','ok');
+  render();
 }
 function viewEvento(e){
   const owner = e.created_by===state.profile.id || isGer();
+  const passou = new Date(e.data_inicio).getTime() < Date.now();
+  const done = e.status==='realizada';
+  const pendente = passou && !done;
+  const selo = done ? '<span class="chip" style="background:#e6f5ee;color:var(--ok)">✓ Realizada</span>'
+             : (pendente ? '<span class="chip pri-alta">⏳ Passou — confirmar</span>' : '');
   openModal(`<div class="modal-h"><h3>${esc(e.titulo)}</h3></div>
     <div class="modal-b">
-      <p style="margin-bottom:10px">${depChip(e.departamento)} <span class="chip">${TIPO_EV[e.tipo]}</span></p>
+      <p style="margin-bottom:10px">${depChip(e.departamento)} <span class="chip">${TIPO_EV[e.tipo]}</span> ${selo}</p>
+      ${(owner&&pendente)?`<div style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-gold btn-sm" id="ve_done">✓ Marcar como realizada</button><button class="btn btn-ghost btn-sm" id="ve_postpone">📅 Foi adiada</button></div>`:''}
+      ${(owner&&done)?`<div style="margin:10px 0"><button class="btn btn-ghost btn-sm" id="ve_undo">↩ Desfazer (voltar a agendada)</button></div>`:''}
       <div class="it-meta" style="font-size:13px"><span>🗓 ${fmtDateTime(e.data_inicio)}${e.data_fim?' – '+fmtTime(e.data_fim):''}</span></div>
       ${e.local?`<p style="margin-top:8px">📍 ${esc(e.local)}</p>`:''}
       ${e.responsavel?`<p style="margin-top:4px">👤 ${esc(e.responsavel)}</p>`:''}
@@ -630,6 +661,11 @@ function viewEvento(e){
   if(owner){
     $('#ve_del').onclick=()=>{ closeModal(); delRow('eventos', e.id, 'Evento excluído'); };
     $('#ve_edit').onclick=()=>{ closeModal(); eventoModal(e, e.tipo); };
+    if(pendente){
+      $('#ve_done').onclick=()=>{ closeModal(); marcarEvento(e.id,'realizada'); };
+      $('#ve_postpone').onclick=()=>{ closeModal(); eventoModal(e, e.tipo); };
+    }
+    if(done) $('#ve_undo').onclick=()=>{ closeModal(); marcarEvento(e.id,'agendada'); };
   }
 }
 function eventoModal(e=null,tipo='reuniao'){
@@ -659,6 +695,8 @@ function eventoModal(e=null,tipo='reuniao'){
       data_fim:$('#m_fim').value?new Date($('#m_fim').value).toISOString():null,
       local:$('#m_loc').value.trim(),responsavel:$('#m_resp').value.trim(),link:$('#m_link').value.trim(),descricao:$('#m_desc').value.trim()};
     if(!rec.titulo||!rec.data_inicio)return toast('Preencha título e data de início.','err');
+    // Ao remarcar para uma data futura, a reunião volta a ser "agendada" (some o alerta de confirmar)
+    if(new Date(rec.data_inicio).getTime() > Date.now()) rec.status='agendada';
     if(e){ await saveRow('eventos',e,rec,'Evento salvo'); return; }
     // NOVO evento
     const {data:ins,error}=await sb.from('eventos').insert(rec).select().single();
