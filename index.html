@@ -826,6 +826,7 @@ function gravarModal(r){
       <div class="card-sub" style="margin-bottom:6px">${esc(r.titulo)}</div>
       <div id="rec_time" style="font-size:36px;font-family:'Playfair Display',serif;color:var(--navy)">00:00</div>
       <div id="rec_status" class="card-sub">Toque em Gravar para começar</div>
+      <div id="rec_live" class="hidden" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#fdece9;color:var(--danger);font-weight:700;font-size:13px;line-height:1.4">🔴 Gravando — não bloqueie o celular nem saia do app</div>
       <div id="rec_trechos" class="card-sub hidden" style="margin-top:6px;font-weight:600;color:var(--navy)"></div>
       <div class="card-sub" style="margin-top:6px;font-size:12px;color:var(--warn)">⚠️ Mantenha a tela ligada e o app aberto durante a reunião. Para reuniões longas, grave em trechos: grave, toque em <b>Gravar próximo trecho</b> e, no fim, em <b>Gerar ata</b> (junta tudo numa ata só).</div>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap">
@@ -857,6 +858,7 @@ function gravarModal(r){
     mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
     mediaRecorder.onstop=async ()=>{
       releaseWake(); clearInterval(timerInt);
+      $('#rec_live').classList.add('hidden');
       audioBlob=new Blob(chunks,{type:(mediaRecorder.mimeType||'audio/webm')});
       try{ stream.getTracks().forEach(t=>t.stop()); }catch(e){}
       $('#rec_audio').src=URL.createObjectURL(audioBlob); $('#rec_audio').classList.remove('hidden');
@@ -880,12 +882,13 @@ function gravarModal(r){
     seconds=0; $('#rec_time').textContent='00:00'; $('#rec_status').textContent='● Gravando…';
     timerInt=setInterval(()=>{ seconds++; $('#rec_time').textContent=fmt(seconds); },1000);
     $('#rec_start').classList.add('hidden'); $('#rec_stop').classList.remove('hidden');
+    $('#rec_live').classList.remove('hidden');
     $('#rec_audio').classList.add('hidden'); $('#rec_actions').classList.add('hidden');
   };
   $('#rec_stop').onclick=()=>{
     if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
     clearInterval(timerInt); $('#rec_status').textContent='Salvando o trecho na nuvem…';
-    $('#rec_stop').classList.add('hidden');
+    $('#rec_stop').classList.add('hidden'); $('#rec_live').classList.add('hidden');
   };
   // Retentar o salvamento do trecho atual, se o automático falhar
   $('#rec_save').onclick=async ()=>{
