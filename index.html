@@ -688,13 +688,29 @@ function eventoModal(e=null,tipo='reuniao'){
      <div class="fg"><label>Link (opcional)</label><input id="m_link" value="${esc(e?.link||'')}" placeholder="https://meet..."></div>
      <div class="fg"><label>Descrição</label><textarea id="m_desc">${esc(e?.descricao||'')}</textarea></div>
    </div></div>
+   <div id="m_err" class="hidden" style="color:var(--danger);font-size:12.5px;padding:0 16px 6px;line-height:1.4"></div>
    <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="m_save">Salvar</button></div>`);
   $('#m_save').onclick=async ()=>{
+    { const err0=$('#m_err'); if(err0) err0.classList.add('hidden'); }
     const rec={titulo:$('#m_tit').value.trim(),tipo:$('#m_tipo').value,departamento:$('#m_dep').value,
       data_inicio:$('#m_ini').value?new Date($('#m_ini').value).toISOString():null,
       data_fim:$('#m_fim').value?new Date($('#m_fim').value).toISOString():null,
       local:$('#m_loc').value.trim(),responsavel:$('#m_resp').value.trim(),link:$('#m_link').value.trim(),descricao:$('#m_desc').value.trim()};
     if(!rec.titulo||!rec.data_inicio)return toast('Preencha título e data de início.','err');
+    // Bloqueio: não permitir reuniões a menos de 30 min de outra (escritório todo)
+    if(rec.tipo==='reuniao'){
+      const ini=new Date(rec.data_inicio).getTime();
+      const from=new Date(ini-30*60000).toISOString(), to=new Date(ini+30*60000).toISOString();
+      const {data:conf}=await sb.from('eventos').select('id,titulo,data_inicio,departamento').eq('tipo','reuniao').gte('data_inicio',from).lte('data_inicio',to);
+      const clash=(conf||[]).find(c=> c.id!==(e?e.id:null) && Math.abs(new Date(c.data_inicio).getTime()-ini) < 30*60000);
+      if(clash){
+        const mesmo = Math.abs(new Date(clash.data_inicio).getTime()-ini) < 60000;
+        const msg=(mesmo?'⛔ Já existe reunião nesse mesmo horário':'⛔ Há uma reunião a menos de 30 min')+': "'+clash.titulo+'" ('+fmtDateTime(clash.data_inicio)+'). Escolha um horário com 30 min de diferença.';
+        const err=$('#m_err'); if(err){ err.textContent=msg; err.classList.remove('hidden'); }
+        toast(msg,'err');
+        return;
+      }
+    }
     // Ao remarcar para uma data futura, a reunião volta a ser "agendada" (some o alerta de confirmar)
     if(new Date(rec.data_inicio).getTime() > Date.now()) rec.status='agendada';
     if(e){ await saveRow('eventos',e,rec,'Evento salvo'); return; }
