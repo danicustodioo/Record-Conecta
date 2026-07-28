@@ -743,6 +743,7 @@ async function renderResultados(c){
       ${r.resumo?`<div class="it-body"><b>Resumo:</b> ${esc(r.resumo)}</div>`:''}
       ${r.decisoes?`<div class="it-body"><b>Decisões:</b> ${esc(r.decisoes)}</div>`:''}
       ${r.proximos_passos?`<div class="it-body"><b>Próximos passos:</b> ${esc(r.proximos_passos)}</div>`:''}
+      ${(r.anotacoes||'').trim()?`<div class="it-body" style="background:#fffdf6;border-left:3px solid var(--warn);padding:8px 10px;border-radius:6px"><b>📝 Anotações:</b> ${esc(r.anotacoes)}</div>`:''}
       ${owner?`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-rec="${r.id}">🎙 Gravar reunião</button>${((r.audio_paths&&r.audio_paths.length)||r.audio_path||(r.transcricao||'').trim())?`<button class="btn btn-gold btn-sm" data-ataudio="${r.id}">🤖 Gerar ata do áudio salvo</button>`:''}${pend?`<button class="btn btn-gold btn-sm" data-fill="${r.id}">✍ Preencher resultado</button>`:`<button class="btn btn-ghost btn-sm" data-pdf="${r.id}">📄 Gerar PDF da ata</button>`}</div>`:''}</div>`;
     }).join('');
     box.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>resultadoModal(rows.find(z=>z.id===b.dataset.edit)));
@@ -770,12 +771,13 @@ function resultadoModal(r=null){
      <div class="fg"><label>Resumo</label><textarea id="r_res">${esc(r?.resumo||'')}</textarea></div>
      <div class="fg"><label>Decisões</label><textarea id="r_dec">${esc(r?.decisoes||'')}</textarea></div>
      <div class="fg"><label>Próximos passos</label><textarea id="r_prox">${esc(r?.proximos_passos||'')}</textarea></div>
+     <div class="fg"><label>📝 Anotações da reunião</label><textarea id="r_anot">${esc(r?.anotacoes||'')}</textarea></div>
    </div></div>
    <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="r_save">Salvar</button></div>`);
   $('#r_save').onclick=async ()=>{
     const rec={titulo:$('#r_tit').value.trim(),tipo:$('#r_tipo').value,data:$('#r_data').value,cliente:$('#r_cli').value.trim(),
       departamento:$('#r_dep').value,participantes:$('#r_part').value.trim(),resumo:$('#r_res').value.trim(),
-      decisoes:$('#r_dec').value.trim(),proximos_passos:$('#r_prox').value.trim()};
+      decisoes:$('#r_dec').value.trim(),proximos_passos:$('#r_prox').value.trim(),anotacoes:$('#r_anot').value.trim()};
     if(!rec.titulo)return toast('Informe um título.','err');
     await saveRow('resultados_reuniao',r,rec,'Resultado salvo');
   };
@@ -842,11 +844,26 @@ function gravarModal(r){
         <button class="btn btn-gold btn-sm" id="rec_ata">🤖 Gerar ata</button>
       </div>
       <div id="rec_msg" class="card-sub" style="margin-top:12px"></div>
+      <div class="fg" style="margin-top:16px;text-align:left">
+        <label style="display:flex;justify-content:space-between;align-items:center">📝 Anotações da reunião <span id="rec_note_st" class="card-sub" style="font-size:11px"></span></label>
+        <textarea id="rec_note" rows="4" placeholder="Anote aqui durante a reunião — salva sozinho e fica guardado.">${esc(r.anotacoes||'')}</textarea>
+      </div>
     </div>
     <div class="modal-f"><button class="btn btn-ghost btn-sm" id="rec_close">Fechar</button></div>`);
   const fmt=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+  // Anotações: salvam sozinhas enquanto digita (debounce)
+  let noteTimer=null, noteLast=(r.anotacoes||'');
+  const salvarNota=async ()=>{
+    const el=$('#rec_note'); if(!el) return; const val=el.value;
+    if(val===noteLast) return;
+    const st=$('#rec_note_st'); if(st) st.textContent='salvando…';
+    const {error}=await sb.from('resultados_reuniao').update({anotacoes:val}).eq('id',r.id);
+    if(error){ if(st) st.textContent='⚠️ erro ao salvar'; return; }
+    noteLast=val; r.anotacoes=val; if(st) st.textContent='✓ salvo';
+  };
+  { const el=$('#rec_note'); if(el){ el.addEventListener('input',()=>{ const st=$('#rec_note_st'); if(st) st.textContent='digitando…'; clearTimeout(noteTimer); noteTimer=setTimeout(salvarNota,1200); }); el.addEventListener('blur',salvarNota); } }
   const cleanup=()=>{ recording=false; finalizing=true; try{ if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){} try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch(e){} clearInterval(timerInt); clearInterval(rollTimer); releaseWake(); document.removeEventListener('visibilitychange', onVis); };
-  $('#rec_close').onclick=()=>{ cleanup(); closeModal(); };
+  $('#rec_close').onclick=async ()=>{ clearTimeout(noteTimer); await salvarNota(); cleanup(); closeModal(); };
   const pickMime=()=> MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus'
       : (MediaRecorder.isTypeSupported('audio/webm')?'audio/webm'
       : (MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':''));
@@ -1056,6 +1073,7 @@ async function gerarPdfAta(r){
     section('Resumo',r.resumo);
     section('Decisões',r.decisoes);
     section('Próximos passos',r.proximos_passos);
+    section('Anotações da reunião',r.anotacoes);
     // Rodapé em todas as páginas
     const pages=doc.internal.getNumberOfPages();
     for(let p=1;p<=pages;p++){
