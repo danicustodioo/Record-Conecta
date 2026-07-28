@@ -783,10 +783,12 @@ function resultadoModal(r=null){
 /* ---- Gravar reunião + Gerar ata por IA ---- */
 function gravarModal(r){
   if(!r) return;
-  let mediaRecorder=null, chunks=[], stream=null, timerInt=null, seconds=0, audioBlob=null, wakeLock=null;
+  let mediaRecorder=null, stream=null, timerInt=null, rollTimer=null, seconds=0, wakeLock=null;
+  let recording=false, finalizing=false;
+  const SEG_MS=5*60*1000; // salva um segmento completo a cada 5 minutos
   let savedPaths = Array.isArray(r.audio_paths)? r.audio_paths.slice() : [];
   let trechosSalvos = 0;
-  const showTrechos=()=>{ const el=$('#rec_trechos'); if(!el) return; if(trechosSalvos>0){ el.classList.remove('hidden'); el.textContent='☁️ '+trechosSalvos+' trecho(s) salvo(s) na nuvem'; } else { el.classList.add('hidden'); } };
+  const showTrechos=()=>{ const el=$('#rec_trechos'); if(!el) return; if(trechosSalvos>0){ el.classList.remove('hidden'); el.textContent='☁️ '+trechosSalvos+' parte(s) salva(s) na nuvem'; } else { el.classList.add('hidden'); } };
   const MAXB = 24*1024*1024; // 24 MB (limite da transcrição por arquivo)
   // Guarda o áudio no banco assim que gravado — mesmo que o app feche depois, nada se perde
   const appendPaths=async (novos)=>{
@@ -828,7 +830,7 @@ function gravarModal(r){
       <div id="rec_status" class="card-sub">Toque em Gravar para começar</div>
       <div id="rec_live" class="hidden" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#fdece9;color:var(--danger);font-weight:700;font-size:13px;line-height:1.4">🔴 Gravando — não bloqueie o celular nem saia do app</div>
       <div id="rec_trechos" class="card-sub hidden" style="margin-top:6px;font-weight:600;color:var(--navy)"></div>
-      <div class="card-sub" style="margin-top:6px;font-size:12px;color:var(--warn)">⚠️ Mantenha a tela ligada e o app aberto durante a reunião. Para reuniões longas, grave em trechos: grave, toque em <b>Gravar próximo trecho</b> e, no fim, em <b>Gerar ata</b> (junta tudo numa ata só).</div>
+      <div class="card-sub" style="margin-top:6px;font-size:12px;color:var(--warn)">⚠️ Mantenha o app aberto durante a reunião. O áudio é salvo na nuvem sozinho a cada 5 minutos — ao terminar, toque em <b>Parar</b> e depois em <b>Gerar ata</b>.</div>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;flex-wrap:wrap">
         <button class="btn btn-danger btn-sm" id="rec_start">● Gravar</button>
         <button class="btn btn-ghost btn-sm hidden" id="rec_stop">■ Parar</button>
@@ -836,73 +838,78 @@ function gravarModal(r){
       <audio id="rec_audio" controls class="hidden" style="width:100%;margin-top:16px"></audio>
       <div id="rec_actions" class="hidden" style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm hidden" id="rec_save">💾 Tentar salvar de novo</button>
-        <button class="btn btn-danger btn-sm" id="rec_more">➕ Gravar próximo trecho</button>
-        <button class="btn btn-gold btn-sm" id="rec_ata">🤖 Gerar ata (junta os trechos)</button>
+        <button class="btn btn-danger btn-sm" id="rec_more">➕ Gravar mais</button>
+        <button class="btn btn-gold btn-sm" id="rec_ata">🤖 Gerar ata</button>
       </div>
       <div id="rec_msg" class="card-sub" style="margin-top:12px"></div>
     </div>
     <div class="modal-f"><button class="btn btn-ghost btn-sm" id="rec_close">Fechar</button></div>`);
   const fmt=s=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
-  const cleanup=()=>{ try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch(e){} clearInterval(timerInt); releaseWake(); document.removeEventListener('visibilitychange', onVis); };
+  const cleanup=()=>{ recording=false; finalizing=true; try{ if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){} try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch(e){} clearInterval(timerInt); clearInterval(rollTimer); releaseWake(); document.removeEventListener('visibilitychange', onVis); };
   $('#rec_close').onclick=()=>{ cleanup(); closeModal(); };
-  $('#rec_start').onclick=async ()=>{
-    if(!navigator.mediaDevices||!window.MediaRecorder){ toast('Seu aparelho não suporta gravação aqui.','err'); return; }
-    try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
-    catch(e){ toast('Permita o microfone para gravar.','err'); return; }
-    chunks=[];
-    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus'
+  const pickMime=()=> MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus'
       : (MediaRecorder.isTypeSupported('audio/webm')?'audio/webm'
       : (MediaRecorder.isTypeSupported('audio/mp4')?'audio/mp4':''));
-    try{ mediaRecorder=new MediaRecorder(stream, mime?{mimeType:mime,audioBitsPerSecond:24000}:{audioBitsPerSecond:24000}); }
+  const finalizeUI=()=>{
+    clearInterval(timerInt); clearInterval(rollTimer); releaseWake();
+    try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch(e){} stream=null;
+    const hide=id=>{ const el=$('#'+id); if(el) el.classList.add('hidden'); };
+    const show=id=>{ const el=$('#'+id); if(el) el.classList.remove('hidden'); };
+    hide('rec_live'); hide('rec_stop'); hide('rec_start'); show('rec_actions');
+    const st=$('#rec_status'); if(st) st.textContent = savedPaths.length ? '✅ Gravação salva na nuvem — gere a ata quando quiser.' : '⚠️ Nada foi gravado.';
+  };
+  // Grava UM segmento completo (start...stop) = arquivo sempre válido. Ao fechar, já abre o próximo (sem buraco) e salva o anterior.
+  function startSegment(){
+    let segChunks=[];
+    const segMime=pickMime()||'audio/webm';
+    try{ mediaRecorder=new MediaRecorder(stream, segMime?{mimeType:segMime}:{}); }
     catch(e){ mediaRecorder=new MediaRecorder(stream); }
-    mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size) segChunks.push(e.data); };
     mediaRecorder.onstop=async ()=>{
-      releaseWake(); clearInterval(timerInt);
-      $('#rec_live').classList.add('hidden');
-      audioBlob=new Blob(chunks,{type:(mediaRecorder.mimeType||'audio/webm')});
-      try{ stream.getTracks().forEach(t=>t.stop()); }catch(e){}
-      $('#rec_audio').src=URL.createObjectURL(audioBlob); $('#rec_audio').classList.remove('hidden');
-      $('#rec_stop').classList.add('hidden'); $('#rec_start').classList.add('hidden');
-      $('#rec_actions').classList.remove('hidden');
-      // Salva o trecho na nuvem IMEDIATAMENTE (não depende de gerar a ata)
-      try{
-        await salvarTrecho(audioBlob, m=>{ $('#rec_status').textContent=m; });
-        $('#rec_status').textContent='✅ Trecho salvo na nuvem — pode gravar o próximo ou gerar a ata.';
-        $('#rec_save').classList.add('hidden');
-      }catch(e){
-        $('#rec_status').textContent='⚠️ Não consegui salvar automaticamente. Toque em "Tentar salvar de novo".';
-        $('#rec_save').classList.remove('hidden');
+      const blob=new Blob(segChunks,{type:segMime}); segChunks=[];
+      const continua = recording && !finalizing;
+      // Abre já o próximo segmento para não perder áudio; o upload do anterior corre em paralelo
+      if(continua){ try{ startSegment(); }catch(e){ recording=false; } }
+      if(blob.size>2000){
+        try{ await salvarTrecho(blob, m=>{ if($('#rec_status')&&!continua) $('#rec_status').textContent=m; }); if($('#rec_save')) $('#rec_save').classList.add('hidden'); }
+        catch(e){ if($('#rec_status')) $('#rec_status').textContent='⚠️ Falha ao salvar uma parte (verifique a internet).'; }
       }
+      if(!continua) finalizeUI();
     };
-    // Se o sistema encerrar a captura (tela apagou/app em segundo plano), finaliza salvando o que já foi gravado
-    stream.getAudioTracks().forEach(t=>{ t.onended=()=>{ if(mediaRecorder&&mediaRecorder.state==='recording'){ $('#rec_status').textContent='⚠️ Gravação interrompida pelo sistema — salvando o trecho gravado…'; try{ mediaRecorder.stop(); }catch(e){} } }; });
-    // timeslice: descarrega o áudio a cada 5s, para não perder nada se houver interrupção
-    mediaRecorder.start(5000);
+    mediaRecorder.start(); // SEM timeslice → arquivo do segmento sempre válido
+  }
+  const iniciarGravacao=async ()=>{
+    if(!navigator.mediaDevices||!window.MediaRecorder){ toast('Seu aparelho não suporta gravação aqui.','err'); return; }
+    if(!stream){
+      try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+      catch(e){ toast('Permita o microfone para gravar.','err'); return; }
+      // Se o sistema encerrar a captura, para e salva o que já foi gravado
+      stream.getAudioTracks().forEach(t=>{ t.onended=()=>{ if(recording){ recording=false; finalizing=true; $('#rec_status').textContent='⚠️ Gravação interrompida pelo sistema — salvando…'; try{ if(mediaRecorder&&mediaRecorder.state==='recording') mediaRecorder.stop(); }catch(e){} } }; });
+    }
+    recording=true; finalizing=false;
     acquireWake();
     seconds=0; $('#rec_time').textContent='00:00'; $('#rec_status').textContent='● Gravando…';
+    clearInterval(timerInt);
     timerInt=setInterval(()=>{ seconds++; $('#rec_time').textContent=fmt(seconds); },1000);
+    // rollover: a cada 5 min fecha o segmento atual (salva) e abre o próximo automaticamente
+    clearInterval(rollTimer);
+    rollTimer=setInterval(()=>{ if(recording && mediaRecorder && mediaRecorder.state==='recording'){ try{ mediaRecorder.stop(); }catch(e){} } }, SEG_MS);
     $('#rec_start').classList.add('hidden'); $('#rec_stop').classList.remove('hidden');
     $('#rec_live').classList.remove('hidden');
-    $('#rec_audio').classList.add('hidden'); $('#rec_actions').classList.add('hidden');
-  };
-  $('#rec_stop').onclick=()=>{
-    if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
-    clearInterval(timerInt); $('#rec_status').textContent='Salvando o trecho na nuvem…';
-    $('#rec_stop').classList.add('hidden'); $('#rec_live').classList.add('hidden');
-  };
-  // Retentar o salvamento do trecho atual, se o automático falhar
-  $('#rec_save').onclick=async ()=>{
-    if(!audioBlob) return;
-    try{ await salvarTrecho(audioBlob, m=>{ $('#rec_status').textContent=m; }); $('#rec_status').textContent='✅ Trecho salvo na nuvem'; $('#rec_save').classList.add('hidden'); }
-    catch(e){ toast('Ainda não consegui salvar: '+(e.message||e),'err'); }
-  };
-  // "Gravar próximo trecho": o trecho atual já foi salvo na nuvem; apenas prepara o próximo
-  $('#rec_more').onclick=()=>{
-    audioBlob=null;
     $('#rec_audio').classList.add('hidden'); $('#rec_actions').classList.add('hidden'); $('#rec_save').classList.add('hidden');
-    $('#rec_start').classList.remove('hidden'); $('#rec_start').textContent='● Gravar próximo trecho';
-    $('#rec_status').textContent='Pronto para o próximo trecho.';
+    startSegment();
   };
+  $('#rec_start').onclick=iniciarGravacao;
+  $('#rec_stop').onclick=()=>{
+    if(!recording) return;
+    recording=false; finalizing=true;
+    clearInterval(rollTimer);
+    $('#rec_status').textContent='Salvando na nuvem…';
+    $('#rec_stop').classList.add('hidden'); $('#rec_live').classList.add('hidden');
+    try{ if(mediaRecorder&&mediaRecorder.state==='recording') mediaRecorder.stop(); }catch(e){}
+  };
+  $('#rec_save').onclick=()=>{ $('#rec_save').classList.add('hidden'); }; // (salvamento agora é automático por segmento)
+  $('#rec_more').onclick=iniciarGravacao;
   $('#rec_ata').onclick=async ()=>{
     if(!savedPaths.length){ toast('Aguarde o áudio ser salvo na nuvem antes de gerar a ata.','err'); return; }
     $('#rec_ata').disabled=true; $('#rec_more').disabled=true;
