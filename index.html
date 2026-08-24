@@ -560,6 +560,7 @@ async function renderCalendario(c){
       <div id="calList" style="margin-top:12px"></div>
     </div>`;
   {
+    await loadPautaCounts((evs||[]).filter(e=>e.tipo==='reuniao').map(e=>e.id));
     const monthEvs=(evs||[]).slice().sort((a,b)=>new Date(a.data_inicio)-new Date(b.data_inicio));
     $('#calList').innerHTML = monthEvs.length ? monthEvs.map(eventoCard).join('') : emptyBox('Nenhum evento neste mês.','▦');
     $('#calList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const ev=evs.find(z=>z.id===b.dataset.edit); if(ev) eventoModal(ev, ev.tipo);});
@@ -567,6 +568,7 @@ async function renderCalendario(c){
     $('#calList').querySelectorAll('[data-done]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.done,'realizada'));
     $('#calList').querySelectorAll('[data-undo]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.undo,'agendada'));
     $('#calList').querySelectorAll('[data-postpone]').forEach(b=>b.onclick=()=>{const ev=evs.find(z=>z.id===b.dataset.postpone); if(ev) eventoModal(ev, ev.tipo);});
+    $('#calList').querySelectorAll('[data-pauta]').forEach(b=>b.onclick=()=>{const ev=evs.find(z=>z.id===b.dataset.pauta); if(ev) pautaModal(ev);});
   }
   $('#calPrev').onclick=()=>{state.calRef=new Date(y,m-1,1);renderCalendario(c);};
   $('#calNext').onclick=()=>{state.calRef=new Date(y,m+1,1);renderCalendario(c);};
@@ -606,8 +608,18 @@ async function renderEventos(c,tipo){
     box.querySelectorAll('[data-done]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.done,'realizada'));
     box.querySelectorAll('[data-undo]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.undo,'agendada'));
     box.querySelectorAll('[data-postpone]').forEach(b=>b.onclick=()=>{const e=evs.find(z=>z.id===b.dataset.postpone);eventoModal(e,tipo);});
+    box.querySelectorAll('[data-pauta]').forEach(b=>b.onclick=()=>{const e=evs.find(z=>z.id===b.dataset.pauta);pautaModal(e);});
   };
+  if(tipo==='reuniao') await loadPautaCounts((evs||[]).map(e=>e.id));
   $('#fDep').onchange=draw; $('#fWhen').onchange=draw; draw();
+}
+let pautaCount={};
+async function loadPautaCounts(ids){
+  const list=(ids||[]).filter(Boolean);
+  if(!list.length){ return; }
+  const {data}=await sb.from('pauta_topicos').select('evento_id').in('evento_id',list);
+  const m={}; (data||[]).forEach(t=>{ m[t.evento_id]=(m[t.evento_id]||0)+1; });
+  list.forEach(id=>{ pautaCount[id]=m[id]||0; });
 }
 function eventoCard(e){
   const owner = e.created_by===state.profile.id || isGer();
@@ -628,7 +640,43 @@ function eventoCard(e){
   </div><div style="display:flex;gap:6px;align-items:center">${depChip(e.departamento)}${owner?`<div class="row-actions"><button class="icon-btn" data-edit="${e.id}">✎</button><button class="icon-btn" data-del="${e.id}">🗑</button></div>`:''}</div></div>
   ${e.descricao?`<div class="it-body">${esc(e.descricao)}</div>`:''}
   ${e.link?`<div class="it-body"><a href="${esc(e.link)}" target="_blank" style="color:#2b5aa8">🔗 ${esc(e.link)}</a></div>`:''}
+  ${e.tipo==='reuniao'?`<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" data-pauta="${e.id}">🗒 Assuntos da reunião${pautaCount[e.id]?' ('+pautaCount[e.id]+')':''}</button></div>`:''}
   ${acoes}${desfazer}</div>`;
+}
+// Pauta da reunião: qualquer setor adiciona assuntos a tratar
+async function pautaModal(e){
+  if(!e) return;
+  openModal(`<div class="modal-h"><h3>🗒 Assuntos da reunião</h3></div>
+    <div class="modal-b">
+      <div class="card-sub" style="margin-bottom:8px">${esc(e.titulo)} · 🗓 ${fmtDateTime(e.data_inicio)}</div>
+      <div id="pt_list" style="margin-bottom:12px" class="card-sub">Carregando…</div>
+      <div class="fg"><label>Adicionar assunto</label>
+        <textarea id="pt_novo" rows="2" placeholder="Ex.: Rever guias do mês, pendência do cliente X…"></textarea></div>
+      <button class="btn btn-gold btn-sm" id="pt_add">+ Adicionar assunto</button>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Fechar</button></div>`);
+  const draw=async ()=>{
+    const {data:tops}=await sb.from('pauta_topicos').select('*').eq('evento_id',e.id).order('created_at',{ascending:true});
+    pautaCount[e.id]=(tops||[]).length;
+    const box=$('#pt_list'); if(!box) return;
+    if(!tops||!tops.length){ box.innerHTML=`<div class="card-sub" style="padding:10px;text-align:center;background:#faf8f3;border-radius:8px">Nenhum assunto adicionado ainda. Seja o primeiro! 👇</div>`; return; }
+    box.innerHTML=tops.map(t=>{
+      const meu = t.created_by===state.profile.id || isGer();
+      return `<div class="item" style="padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+        <div><div>${esc(t.texto)}</div><div class="it-meta" style="margin-top:4px"><span>👤 ${esc(t.autor||'—')}</span>${t.departamento?depChip(t.departamento):''}</div></div>
+        ${meu?`<button class="icon-btn" data-ptdel="${t.id}">🗑</button>`:''}</div></div>`;
+    }).join('');
+    box.querySelectorAll('[data-ptdel]').forEach(b=>b.onclick=async ()=>{ await sb.from('pauta_topicos').delete().eq('id',b.dataset.ptdel); draw(); });
+  };
+  $('#pt_add').onclick=async ()=>{
+    const txt=$('#pt_novo').value.trim(); if(!txt){ toast('Escreva o assunto.','err'); return; }
+    $('#pt_add').disabled=true;
+    const {error}=await sb.from('pauta_topicos').insert({ evento_id:e.id, texto:txt, autor:state.profile.nome||'', departamento:state.profile.departamento||'' });
+    $('#pt_add').disabled=false;
+    if(error){ toast(error.message,'err'); return; }
+    $('#pt_novo').value=''; toast('Assunto adicionado','ok'); draw();
+  };
+  draw();
 }
 async function marcarEvento(id, status){
   const {error}=await sb.from('eventos').update({status}).eq('id',id);
@@ -653,6 +701,7 @@ function viewEvento(e){
       ${e.responsavel?`<p style="margin-top:4px">👤 ${esc(e.responsavel)}</p>`:''}
       ${e.descricao?`<p style="margin-top:12px;line-height:1.5">${esc(e.descricao)}</p>`:''}
       ${e.link?`<p style="margin-top:10px"><a href="${esc(e.link)}" target="_blank" style="color:#2b5aa8">🔗 Abrir link</a></p>`:''}
+      ${e.tipo==='reuniao'?`<div style="margin-top:14px"><button class="btn btn-gold btn-sm" id="ve_pauta">🗒 Assuntos da reunião</button></div>`:''}
     </div>
     <div class="modal-f">
       ${owner?`<button class="btn btn-danger btn-sm" id="ve_del">🗑 Excluir</button><button class="btn btn-gold btn-sm" id="ve_edit">✎ Editar</button>`:''}
@@ -667,6 +716,7 @@ function viewEvento(e){
     }
     if(done) $('#ve_undo').onclick=()=>{ closeModal(); marcarEvento(e.id,'agendada'); };
   }
+  const vp=$('#ve_pauta'); if(vp) vp.onclick=()=>pautaModal(e);
 }
 function eventoModal(e=null,tipo='reuniao'){
   const t=e?e.tipo:tipo;
