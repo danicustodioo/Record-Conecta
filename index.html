@@ -702,6 +702,7 @@ function viewEvento(e){
       ${e.descricao?`<p style="margin-top:12px;line-height:1.5">${esc(e.descricao)}</p>`:''}
       ${e.link?`<p style="margin-top:10px"><a href="${esc(e.link)}" target="_blank" style="color:#2b5aa8">🔗 Abrir link</a></p>`:''}
       ${e.tipo==='reuniao'?`<div style="margin-top:14px"><button class="btn btn-gold btn-sm" id="ve_pauta">🗒 Assuntos da reunião</button></div>`:''}
+      ${owner?`<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" id="ve_notify">🔔 Avisar a equipe</button></div>`:''}
     </div>
     <div class="modal-f">
       ${owner?`<button class="btn btn-danger btn-sm" id="ve_del">🗑 Excluir</button><button class="btn btn-gold btn-sm" id="ve_edit">✎ Editar</button>`:''}
@@ -717,6 +718,7 @@ function viewEvento(e){
     if(done) $('#ve_undo').onclick=()=>{ closeModal(); marcarEvento(e.id,'agendada'); };
   }
   const vp=$('#ve_pauta'); if(vp) vp.onclick=()=>pautaModal(e);
+  const vn=$('#ve_notify'); if(vn) vn.onclick=async ()=>{ vn.disabled=true; await notifyEvento(e); toast('Aviso enviado à equipe 🔔','ok'); };
 }
 function eventoModal(e=null,tipo='reuniao'){
   const t=e?e.tipo:tipo;
