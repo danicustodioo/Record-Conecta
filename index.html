@@ -266,7 +266,7 @@ nav{flex:1;padding:12px 10px;overflow-y:auto}
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
         <button class="btn btn-gold btn-sm hidden" id="installBtn" title="Instalar aplicativo">⬇ Instalar app</button>
-        <button class="btn btn-ghost btn-sm hidden" id="notifBtn" title="Ativar notificações">🔔 Ativar avisos</button>
+        <button class="btn btn-gold btn-sm hidden" id="notifBtn" title="Ativar notificações">🔔 Ativar avisos</button>
         <button class="btn btn-ghost btn-sm" id="refreshBtn" title="Atualizar">⟳ Atualizar</button>
       </div>
     </div>
@@ -343,6 +343,7 @@ async function boot(){
   $('#nav-setor-label').textContent = 'Meu Setor · '+(DEPTS[prof.departamento]||'');
   document.querySelectorAll('.ger-only').forEach(e=>e.classList.toggle('hidden', !prof.is_gerencia));
   setupRealtime();
+  await ensurePushSubscription();
   updateNotifBtn();
   go('inicio');
   $('#loading').classList.add('hidden');
@@ -1692,10 +1693,26 @@ function urlB64ToUint8(base64String){
   return arr;
 }
 function notifSupported(){ return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window); }
-function updateNotifBtn(){
+async function updateNotifBtn(){
   const b=$('#notifBtn'); if(!b) return;
-  const ok = notifSupported() && Notification.permission==='granted';
-  b.classList.toggle('hidden', !notifSupported() || ok);
+  if(!notifSupported()){ b.classList.add('hidden'); return; }
+  let hasSub=false;
+  try{ const reg=await navigator.serviceWorker.ready; hasSub=!!(await reg.pushManager.getSubscription()); }catch(_){}
+  // Mostra "Ativar avisos" se ainda não permitiu OU se não há assinatura ativa (ex.: após reinstalar o app)
+  const ok = Notification.permission==='granted' && hasSub;
+  b.classList.toggle('hidden', ok);
+}
+// Recria a assinatura de push automaticamente se ela sumiu (ex.: app reinstalado no iPhone)
+async function ensurePushSubscription(){
+  try{
+    if(!notifSupported() || Notification.permission!=='granted' || !state.profile) return;
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub) sub=await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:urlB64ToUint8(VAPID_PUBLIC) });
+    await sb.from('push_subscriptions').upsert(
+      { profile_id:state.profile.id, endpoint:sub.endpoint, subscription:sub.toJSON(), user_agent:navigator.userAgent },
+      { onConflict:'endpoint' });
+  }catch(e){ /* silencioso */ }
 }
 async function enableNotifications(){
   if(!notifSupported()){ toast('Seu aparelho não suporta avisos aqui. No iPhone, instale o app primeiro (Compartilhar → Adicionar à Tela de Início).','err'); return; }
