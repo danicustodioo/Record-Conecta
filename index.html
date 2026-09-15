@@ -802,7 +802,7 @@ async function renderResultados(c){
       <select id="fDep2"><option value="">Todos os setores</option>${Object.entries(DEPTS_TODOS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
     <div id="rList"></div>`;
   $('#addR').onclick=()=>resultadoModal();
-  let statusTab = state.resTab || 'pend';
+  let statusTab = state.resTab || 'todas';
   const paintTabs=()=>{ [['pend','tabPend'],['feito','tabFeito'],['todas','tabTodas']].forEach(([k,id])=>{ const b=$('#'+id); if(!b) return; b.classList.remove('btn-gold','btn-ghost'); b.classList.add(statusTab===k?'btn-gold':'btn-ghost'); }); };
   const isPend = r => !(r.resumo||'').trim() && !(r.decisoes||'').trim() && !(r.proximos_passos||'').trim();
   const draw=()=>{
