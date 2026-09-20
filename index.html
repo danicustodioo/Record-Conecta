@@ -473,13 +473,20 @@ async function renderInicio(c){
   loadingCard(c);
   const now=new Date();
   const in7=new Date(now.getTime()+7*864e5);
-  const [{data:evs},{data:exigs},{data:proj},{data:tasks},{data:results}] = await Promise.all([
+  const [{data:evs},{data:exigs},{data:proj},{data:tasks},{data:results},{data:tarefas}] = await Promise.all([
     sb.from('eventos').select('*').gte('data_inicio',now.toISOString()).order('data_inicio').limit(50),
     sb.from('exigencias').select('*').neq('status','concluida'),
     sb.from('plano_estrategico').select('id'),
     sb.from('plano_tarefas').select('concluida'),
     sb.from('resultados_reuniao').select('resumo,decisoes,proximos_passos'),
+    sb.from('tarefas').select('id,titulo,prazo,status,encarregado_id,departamento'),
   ]);
+  const todayD=new Date(); todayD.setHours(0,0,0,0);
+  const in7D=new Date(todayD.getTime()+7*864e5);
+  const relTarefas=(tarefas||[]).filter(t=> isGer() || t.encarregado_id===state.profile.id || t.departamento===state.profile.departamento);
+  const abertasT=relTarefas.filter(t=>t.status!=='concluida' && t.prazo);
+  const atrasadasT=abertasT.filter(t=> new Date(t.prazo+'T00:00:00') < todayD);
+  const vencendoT=abertasT.filter(t=>{ const d=new Date(t.prazo+'T00:00:00'); return d>=todayD && d<=in7D; });
   const pendResults=(results||[]).filter(r=>!(r.resumo||'').trim()&&!(r.decisoes||'').trim()&&!(r.proximos_passos||'').trim()).length;
   const evList=evs||[];
   const weekEvs=evList.filter(e=>new Date(e.data_inicio)<=in7);
@@ -494,12 +501,19 @@ async function renderInicio(c){
       <div class="metric"><div class="v">${treinos}</div><div class="l">Treinamentos agendados</div></div>
       <div class="metric"><div class="v">${(exigs||[]).length}</div><div class="l">Exigências em aberto ${isGer()?'(escritório)':'(você/seu setor)'}</div></div>
       <div class="metric" ${pendResults?'style="border-left-color:var(--warn)"':''}><div class="v">${pendResults}</div><div class="l">${pendResults?'⚠️ ':''}Reuniões aguardando resultado</div></div>
+      <div class="metric" id="mAtras" style="cursor:pointer${atrasadasT.length?';border-left-color:var(--danger)':''}"><div class="v">${atrasadasT.length}</div><div class="l">${atrasadasT.length?'⚠️ ':''}Tarefas atrasadas ${isGer()?'(escritório)':'(suas/setor)'}</div></div>
+      <div class="metric" id="mVenc" style="cursor:pointer"><div class="v">${vencendoT.length}</div><div class="l">Tarefas vencendo em 7 dias</div></div>
     </div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
       <div class="card">
         <h3>Próximos compromissos</h3>
         <div class="card-sub">Reuniões, treinamentos e prazos de todos os setores</div>
         <div id="up-events"></div>
+      </div>
+      <div class="card">
+        <h3>Tarefas em foco</h3>
+        <div class="card-sub">Atrasadas e vencendo nos próximos 7 dias</div>
+        <div id="up-tarefas"></div>
       </div>
       <div class="card">
         <h3>Minhas exigências</h3>
@@ -522,6 +536,20 @@ async function renderInicio(c){
       <div class="it-title">${esc(x.titulo)}</div>
       <div class="it-meta">${x.prazo?`<span>⏱ ${fmtDate(x.prazo)}</span>`:''}<span class="chip pri-${x.prioridade}">${x.prioridade}</span></div>
     </div><span class="chip st-${x.status}">${x.status.replace('_',' ')}</span></div></div>`).join('');
+  // Tarefas em foco (atrasadas + vencendo)
+  const ut=$('#up-tarefas');
+  const foco=[...atrasadasT, ...vencendoT].sort((a,b)=> (a.prazo<b.prazo?-1:1));
+  if(!foco.length) ut.innerHTML=emptyBox('Nenhuma tarefa atrasada ou vencendo. 🎉','✔');
+  else ut.innerHTML = foco.slice(0,8).map(t=>{
+    const atr=new Date(t.prazo+'T00:00:00')<todayD;
+    return `<div class="item" style="cursor:pointer${atr?';border-left:3px solid var(--danger);background:#fff6f4':''}"><div class="it-top"><div>
+      <div class="it-title">${esc(t.titulo)}</div>
+      <div class="it-meta"><span>${atr?'⚠️ Atrasada · ':'🗓 '}${fmtDate(t.prazo)}</span>${depChip(t.departamento)}</div>
+    </div></div></div>`;
+  }).join('');
+  ut.onclick=()=>go('tarefas');
+  const ma=$('#mAtras'); if(ma) ma.onclick=()=>go('tarefas');
+  const mv=$('#mVenc'); if(mv) mv.onclick=()=>go('tarefas');
 }
 
 /* ============================================================
