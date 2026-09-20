@@ -479,11 +479,11 @@ async function renderInicio(c){
     sb.from('plano_estrategico').select('id'),
     sb.from('plano_tarefas').select('concluida'),
     sb.from('resultados_reuniao').select('resumo,decisoes,proximos_passos'),
-    sb.from('tarefas').select('id,titulo,prazo,status,encarregado_id,departamento'),
+    sb.from('tarefas').select('id,titulo,prazo,status,encarregado_id,encarregados,departamento'),
   ]);
   const todayD=new Date(); todayD.setHours(0,0,0,0);
   const in7D=new Date(todayD.getTime()+7*864e5);
-  const relTarefas=(tarefas||[]).filter(t=> isGer() || t.encarregado_id===state.profile.id || t.departamento===state.profile.departamento);
+  const relTarefas=(tarefas||[]).filter(t=> isGer() || encIds(t).includes(String(state.profile.id)) || t.departamento===state.profile.departamento);
   const abertasT=relTarefas.filter(t=>t.status!=='concluida' && t.prazo);
   const atrasadasT=abertasT.filter(t=> new Date(t.prazo+'T00:00:00') < todayD);
   const vencendoT=abertasT.filter(t=>{ const d=new Date(t.prazo+'T00:00:00'); return d>=todayD && d<=in7D; });
@@ -1227,6 +1227,7 @@ async function gerarPdfAta(r){
    TAREFAS / PLANO DE AÇÃO
 ============================================================ */
 const TAREFA_PRIOR = { baixa:'Baixa', media:'Média', alta:'Alta' };
+function encIds(t){ const a=Array.isArray(t.encarregados)?t.encarregados.map(String):[]; if(t.encarregado_id && !a.includes(String(t.encarregado_id))) a.push(String(t.encarregado_id)); return a; }
 async function renderTarefas(c){
   loadingCard(c);
   const [{data:rows},{data:profs}] = await Promise.all([
@@ -1242,10 +1243,14 @@ async function renderTarefas(c){
       <select id="tDep"><option value="">Todos os setores</option>${Object.entries(DEPTS_TODOS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
       <select id="tEnc"><option value="">Todos encarregados</option><option value="__me">Minhas tarefas</option>${(profs||[]).map(p=>`<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select>
       <select id="tStatus"><option value="">Todos status</option><option value="a_fazer">A fazer</option><option value="em_andamento">Em andamento</option><option value="concluida">Concluída</option></select>
-      <button class="btn btn-ghost btn-sm" id="tView"></button>
+      <div style="display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden">
+        <button class="btn btn-sm" id="tvLista" style="border-radius:0">☰ Lista</button>
+        <button class="btn btn-sm" id="tvKanban" style="border-radius:0">▦ Kanban</button>
+      </div>
     </div>
     <div id="tBody"></div>`;
   $('#addT').onclick=()=>tarefaModal(null, profs);
+  const paintView=()=>{ const l=$('#tvLista'),k=$('#tvKanban'); if(!l||!k) return; l.classList.toggle('btn-gold',modo==='lista'); l.classList.toggle('btn-ghost',modo!=='lista'); k.classList.toggle('btn-gold',modo==='kanban'); k.classList.toggle('btn-ghost',modo!=='kanban'); };
   const atrasada = t => t.status!=='concluida' && t.prazo && new Date(t.prazo+'T00:00:00')<hoje;
   const prazoTxt = t => {
     if(!t.prazo) return '<span class="chip">sem prazo</span>';
@@ -1258,12 +1263,13 @@ async function renderTarefas(c){
   };
   const prioChip = p => `<span class="chip" ${p==='alta'?'style="background:#fdece9;color:var(--danger)"':(p==='media'?'style="background:#fff3d6;color:#a9791b"':'style="background:#eef2f7;color:#5a6b82"')}>${TAREFA_PRIOR[p]}</span>`;
   const card = t => {
-    const owner = t.created_by===state.profile.id || t.encarregado_id===state.profile.id || isGer();
-    const enc = nomeDe(t.encarregado_id);
+    const ids = encIds(t);
+    const owner = t.created_by===state.profile.id || ids.includes(String(state.profile.id)) || isGer();
+    const encNomes = ids.map(nomeDe).filter(Boolean).join(', ');
     return `<div class="item" ${atrasada(t)?'style="border-left:3px solid var(--danger);background:#fff6f4"':(t.status==='concluida'?'style="opacity:.72"':'')}>
       <div class="it-top"><div>
         <div class="it-title">${t.status==='concluida'?'✅ ':''}${esc(t.titulo)}</div>
-        <div class="it-meta">${depChip(t.departamento)}${prioChip(t.prioridade)}${prazoTxt(t)}${enc?`<span>👤 ${esc(enc)}</span>`:'<span class="chip">sem encarregado</span>'}${t.origem==='reuniao'?'<span class="chip">🎙 da reunião</span>':''}</div>
+        <div class="it-meta">${depChip(t.departamento)}${prioChip(t.prioridade)}${prazoTxt(t)}${encNomes?`<span>👤 ${esc(encNomes)}</span>`:'<span class="chip">sem encarregado</span>'}${t.origem==='reuniao'?'<span class="chip">🎙 da reunião</span>':''}</div>
       </div>${owner?`<div class="row-actions"><button class="icon-btn" data-tedit="${t.id}">✎</button><button class="icon-btn" data-tdel="${t.id}">🗑</button></div>`:''}</div>
       ${t.descricao?`<div class="it-body">${esc(t.descricao)}</div>`:''}
       ${t.andamento?`<div class="it-body" style="background:#f6f8fb;border-radius:6px;padding:6px 8px"><b>Andamento:</b> ${esc(t.andamento)}</div>`:''}
@@ -1284,9 +1290,9 @@ async function renderTarefas(c){
   };
   const draw=()=>{
     const dep=$('#tDep').value, enc=$('#tEnc').value, st=$('#tStatus').value;
-    const list=(rows||[]).filter(t=>(!dep||t.departamento===dep)&&(!enc||(enc==='__me'?t.encarregado_id===state.profile.id:t.encarregado_id===enc))&&(!st||t.status===st));
+    const list=(rows||[]).filter(t=>(!dep||t.departamento===dep)&&(!enc||(enc==='__me'?encIds(t).includes(String(state.profile.id)):encIds(t).includes(String(enc))))&&(!st||t.status===st));
     const box=$('#tBody');
-    $('#tView').textContent = modo==='lista'?'🔲 Ver Kanban':'☰ Ver Lista';
+    paintView();
     if(!list.length){ box.innerHTML=`<div class="card">${emptyBox('Nenhuma tarefa por aqui.','✔')}</div>`; return; }
     if(modo==='kanban'){
       const cols=[['a_fazer','A fazer'],['em_andamento','Em andamento'],['concluida','Concluída']];
@@ -1299,7 +1305,8 @@ async function renderTarefas(c){
     }
     wire();
   };
-  $('#tView').onclick=()=>{ modo=(modo==='lista'?'kanban':'lista'); state.tarefaView=modo; draw(); };
+  $('#tvLista').onclick=()=>{ modo='lista'; state.tarefaView=modo; draw(); };
+  $('#tvKanban').onclick=()=>{ modo='kanban'; state.tarefaView=modo; draw(); };
   $('#tDep').onchange=draw; $('#tEnc').onchange=draw; $('#tStatus').onchange=draw;
   draw();
 }
@@ -1322,31 +1329,45 @@ function andamentoModal(t){
   };
 }
 function tarefaModal(t=null, profs=[]){
-  const opts=(profs||[]).map(p=>`<option value="${p.id}" ${t?.encarregado_id===p.id?'selected':''}>${esc(p.nome)}${p.departamento?' · '+(DEPTS[p.departamento]||p.departamento):''}</option>`).join('');
+  const selIds = t ? encIds(t) : [];
+  const checks=(profs||[]).map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer"><input type="checkbox" class="t_enc_cb" value="${p.id}" ${selIds.includes(String(p.id))?'checked':''}><span>${esc(p.nome)}${p.departamento?' · '+(DEPTS[p.departamento]||p.departamento):''}</span></label>`).join('');
   openModal(`<div class="modal-h"><h3>${t?'Editar':'Nova'} tarefa</h3></div>
    <div class="modal-b"><div class="form-grid">
      <div class="fg"><label>Título *</label><input id="t_tit" value="${esc(t?.titulo||'')}"></div>
      <div class="fg"><label>Descrição</label><textarea id="t_desc">${esc(t?.descricao||'')}</textarea></div>
+     <div class="fg"><label>Encarregados <span style="color:#888;font-weight:400">(pode marcar mais de um)</span></label>
+       <div style="max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff">${checks||'<div class="card-sub" style="padding:8px">Nenhum colaborador cadastrado</div>'}</div></div>
      <div class="form-grid two">
        <div class="fg"><label>Setor</label><select id="t_dep">${Object.entries(DEPTS_TODOS).map(([k,v])=>`<option value="${k}" ${(t?.departamento||state.profile.departamento||'todos')===k?'selected':''}>${v}</option>`).join('')}</select></div>
-       <div class="fg"><label>Encarregado</label><select id="t_enc"><option value="">— (definir depois)</option>${opts}</select></div>
-     </div>
-     <div class="form-grid two">
-       <div class="fg"><label>Prazo</label><input type="date" id="t_prazo" value="${t?.prazo||''}"></div>
        <div class="fg"><label>Prioridade</label><select id="t_prio">${Object.entries(TAREFA_PRIOR).map(([k,v])=>`<option value="${k}" ${(t?.prioridade||'media')===k?'selected':''}>${v}</option>`).join('')}</select></div>
      </div>
+     <div class="fg"><label>Prazo</label><input type="date" id="t_prazo" value="${t?.prazo||''}"></div>
    </div></div>
    <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="t_save">Salvar</button></div>`);
   $('#t_save').onclick=async ()=>{
+    const encs=[...document.querySelectorAll('.t_enc_cb')].filter(x=>x.checked).map(x=>x.value);
     const rec={ titulo:$('#t_tit').value.trim(), descricao:$('#t_desc').value.trim(), departamento:$('#t_dep').value,
-      encarregado_id:$('#t_enc').value||null, prazo:$('#t_prazo').value||null, prioridade:$('#t_prio').value };
+      encarregados:encs, encarregado_id:null, prazo:$('#t_prazo').value||null, prioridade:$('#t_prio').value };
     if(!rec.titulo) return toast('Informe um título.','err');
-    let error;
+    const prev = t? encIds(t) : [];
+    let error, newId=t?.id;
     if(t){ ({error}=await sb.from('tarefas').update(rec).eq('id',t.id)); }
-    else { ({error}=await sb.from('tarefas').insert(rec)); }
+    else { const {data,error:e2}=await sb.from('tarefas').insert(rec).select('id').single(); error=e2; newId=data&&data.id; }
     if(error){ toast(error.message,'err'); return; }
-    closeModal(); toast('Tarefa salva','ok'); render();
+    const novos = encs.filter(id=>!prev.includes(id)); // avisa só quem foi adicionado agora
+    closeModal(); toast('Tarefa salva','ok');
+    notificarTarefaNova(newId, novos);
+    render();
   };
+}
+async function notificarTarefaNova(tarefaId, ids){
+  if(!tarefaId || !ids || !ids.length) return;
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    await fetch(`${SUPABASE_URL}/functions/v1/notificar-tarefa`,{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
+      body:JSON.stringify({ tarefa_id:tarefaId, profile_ids:ids })});
+  }catch(e){ /* não bloqueia */ }
 }
 
 /* ============================================================
