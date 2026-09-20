@@ -1356,17 +1356,19 @@ function tarefaModal(t=null, profs=[]){
     if(error){ toast(error.message,'err'); return; }
     const novos = encs.filter(id=>!prev.includes(id)); // avisa só quem foi adicionado agora
     closeModal(); toast('Tarefa salva','ok');
-    notificarTarefaNova(newId, novos);
+    if(t){ if(novos.length) notificarTarefaNova(newId, novos, false); }
+    else { notificarTarefaNova(newId, encs, true); } // nova tarefa: avisa encarregados + gerência
     render();
   };
 }
-async function notificarTarefaNova(tarefaId, ids){
-  if(!tarefaId || !ids || !ids.length) return;
+async function notificarTarefaNova(tarefaId, ids, incluirGerencia){
+  if(!tarefaId) return;
+  if(!(ids&&ids.length) && !incluirGerencia) return;
   try{
     const {data:{session}}=await sb.auth.getSession();
     await fetch(`${SUPABASE_URL}/functions/v1/notificar-tarefa`,{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
-      body:JSON.stringify({ tarefa_id:tarefaId, profile_ids:ids })});
+      body:JSON.stringify({ tarefa_id:tarefaId, profile_ids:ids||[], incluir_gerencia:!!incluirGerencia })});
   }catch(e){ /* não bloqueia */ }
 }
 
