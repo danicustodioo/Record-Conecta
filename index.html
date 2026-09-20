@@ -246,6 +246,7 @@ nav{flex:1;padding:12px 10px;overflow-y:auto}
       <button class="nav-item" data-view="reunioes"><span class="ic">◷</span> Reuniões</button>
       <button class="nav-item" data-view="treinamentos"><span class="ic">✦</span> Treinamentos</button>
       <button class="nav-item" data-view="resultados"><span class="ic">✎</span> Resultados</button>
+      <button class="nav-item" data-view="tarefas"><span class="ic">✔</span> Tarefas</button>
       <div class="nav-sec">Pessoal</div>
       <button class="nav-item" data-view="agenda"><span class="ic">🗓</span> Minha Agenda</button>
       <button class="nav-item" data-view="setor"><span class="ic">◐</span> <span id="nav-setor-label">Meu Setor</span></button>
@@ -371,6 +372,7 @@ const VIEW_META = {
   reunioes:['Reuniões','Reuniões programadas com clientes e internas'],
   treinamentos:['Treinamentos','Capacitações agendadas para a equipe'],
   resultados:['Resultados de Reunião','Registros e decisões das reuniões'],
+  tarefas:['Tarefas','Plano de ação: prazos, encarregados e evolução'],
   setor:['Meu Setor','Sua performance, exigências e feedbacks'],
   agenda:['Minha Agenda','Sua Google Agenda integrada — visível só para você'],
   gerencia:['Painel de Gerência','Plano estratégico e gestão da equipe'],
@@ -403,6 +405,7 @@ async function render(){
   if(v==='reunioes') return renderEventos(c,'reuniao');
   if(v==='treinamentos') return renderEventos(c,'treinamento');
   if(v==='resultados') return renderResultados(c);
+  if(v==='tarefas') return renderTarefas(c);
   if(v==='setor') return renderSetor(c);
   if(v==='agenda') return renderAgenda(c);
   if(v==='gerencia') return renderGerencia(c);
@@ -1190,6 +1193,132 @@ async function gerarPdfAta(r){
     setTimeout(()=>{ try{ window.open(url,'_blank'); }catch(_){} setTimeout(()=>URL.revokeObjectURL(url),60000); },300);
     toast('PDF pronto! 📄','ok');
   }catch(e){ toast('Erro ao gerar PDF: '+(e.message||e),'err'); }
+}
+
+/* ============================================================
+   TAREFAS / PLANO DE AÇÃO
+============================================================ */
+const TAREFA_PRIOR = { baixa:'Baixa', media:'Média', alta:'Alta' };
+async function renderTarefas(c){
+  loadingCard(c);
+  const [{data:rows},{data:profs}] = await Promise.all([
+    sb.from('tarefas').select('*').order('prazo',{ascending:true,nullsFirst:false}),
+    sb.from('profiles').select('id,nome,departamento').order('nome')
+  ]);
+  const nomeDe = id => (profs||[]).find(p=>p.id===id)?.nome || '';
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  let modo = state.tarefaView || 'lista';
+  c.innerHTML = `
+    <div class="section-head"><h3>Tarefas · Plano de ação</h3><button class="btn btn-gold btn-sm" id="addT">+ Nova tarefa</button></div>
+    <div class="filters">
+      <select id="tDep"><option value="">Todos os setores</option>${Object.entries(DEPTS_TODOS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+      <select id="tEnc"><option value="">Todos encarregados</option><option value="__me">Minhas tarefas</option>${(profs||[]).map(p=>`<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select>
+      <select id="tStatus"><option value="">Todos status</option><option value="a_fazer">A fazer</option><option value="em_andamento">Em andamento</option><option value="concluida">Concluída</option></select>
+      <button class="btn btn-ghost btn-sm" id="tView"></button>
+    </div>
+    <div id="tBody"></div>`;
+  $('#addT').onclick=()=>tarefaModal(null, profs);
+  const atrasada = t => t.status!=='concluida' && t.prazo && new Date(t.prazo+'T00:00:00')<hoje;
+  const prazoTxt = t => {
+    if(!t.prazo) return '<span class="chip">sem prazo</span>';
+    if(t.status==='concluida') return `<span>🗓 ${fmtDate(t.prazo)}</span>`;
+    const dias=Math.round((new Date(t.prazo+'T00:00:00')-hoje)/864e5);
+    if(dias<0) return `<span class="chip pri-alta">⚠️ Atrasada ${Math.abs(dias)}d</span>`;
+    if(dias===0) return `<span class="chip pri-alta">Vence hoje</span>`;
+    if(dias<=3) return `<span class="chip" style="background:#fff3d6;color:#a9791b">Vence em ${dias}d</span>`;
+    return `<span>🗓 ${fmtDate(t.prazo)}</span>`;
+  };
+  const prioChip = p => `<span class="chip" ${p==='alta'?'style="background:#fdece9;color:var(--danger)"':(p==='media'?'style="background:#fff3d6;color:#a9791b"':'style="background:#eef2f7;color:#5a6b82"')}>${TAREFA_PRIOR[p]}</span>`;
+  const card = t => {
+    const owner = t.created_by===state.profile.id || t.encarregado_id===state.profile.id || isGer();
+    const enc = nomeDe(t.encarregado_id);
+    return `<div class="item" ${atrasada(t)?'style="border-left:3px solid var(--danger);background:#fff6f4"':(t.status==='concluida'?'style="opacity:.72"':'')}>
+      <div class="it-top"><div>
+        <div class="it-title">${t.status==='concluida'?'✅ ':''}${esc(t.titulo)}</div>
+        <div class="it-meta">${depChip(t.departamento)}${prioChip(t.prioridade)}${prazoTxt(t)}${enc?`<span>👤 ${esc(enc)}</span>`:'<span class="chip">sem encarregado</span>'}${t.origem==='reuniao'?'<span class="chip">🎙 da reunião</span>':''}</div>
+      </div>${owner?`<div class="row-actions"><button class="icon-btn" data-tedit="${t.id}">✎</button><button class="icon-btn" data-tdel="${t.id}">🗑</button></div>`:''}</div>
+      ${t.descricao?`<div class="it-body">${esc(t.descricao)}</div>`:''}
+      ${t.andamento?`<div class="it-body" style="background:#f6f8fb;border-radius:6px;padding:6px 8px"><b>Andamento:</b> ${esc(t.andamento)}</div>`:''}
+      ${owner?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        ${t.status!=='a_fazer'?`<button class="btn btn-ghost btn-sm" data-tst="${t.id}|a_fazer">↩ A fazer</button>`:''}
+        ${t.status!=='em_andamento'?`<button class="btn btn-ghost btn-sm" data-tst="${t.id}|em_andamento">▶ Em andamento</button>`:''}
+        ${t.status!=='concluida'?`<button class="btn btn-gold btn-sm" data-tst="${t.id}|concluida">✔ Concluir</button>`:''}
+        <button class="btn btn-ghost btn-sm" data-tand="${t.id}">📝 Andamento</button>
+      </div>`:''}
+    </div>`;
+  };
+  const wire=()=>{
+    const box=$('#tBody');
+    box.querySelectorAll('[data-tedit]').forEach(b=>b.onclick=()=>tarefaModal(rows.find(z=>z.id===b.dataset.tedit), profs));
+    box.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>delRow('tarefas',b.dataset.tdel,'Tarefa excluída'));
+    box.querySelectorAll('[data-tst]').forEach(b=>b.onclick=()=>{ const [id,st]=b.dataset.tst.split('|'); mudarStatusTarefa(id,st); });
+    box.querySelectorAll('[data-tand]').forEach(b=>b.onclick=()=>andamentoModal(rows.find(z=>z.id===b.dataset.tand)));
+  };
+  const draw=()=>{
+    const dep=$('#tDep').value, enc=$('#tEnc').value, st=$('#tStatus').value;
+    const list=(rows||[]).filter(t=>(!dep||t.departamento===dep)&&(!enc||(enc==='__me'?t.encarregado_id===state.profile.id:t.encarregado_id===enc))&&(!st||t.status===st));
+    const box=$('#tBody');
+    $('#tView').textContent = modo==='lista'?'🔲 Ver Kanban':'☰ Ver Lista';
+    if(!list.length){ box.innerHTML=`<div class="card">${emptyBox('Nenhuma tarefa por aqui.','✔')}</div>`; return; }
+    if(modo==='kanban'){
+      const cols=[['a_fazer','A fazer'],['em_andamento','Em andamento'],['concluida','Concluída']];
+      box.innerHTML=`<div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px">${cols.map(([k,label])=>{
+        const items=list.filter(t=>t.status===k);
+        return `<div style="min-width:250px;flex:1"><div style="font-weight:700;color:var(--navy);margin:0 0 8px">${label} <span class="chip">${items.length}</span></div>${items.map(card).join('')||'<div class="card-sub" style="padding:8px 4px">—</div>'}</div>`;
+      }).join('')}</div>`;
+    } else {
+      box.innerHTML=list.map(card).join('');
+    }
+    wire();
+  };
+  $('#tView').onclick=()=>{ modo=(modo==='lista'?'kanban':'lista'); state.tarefaView=modo; draw(); };
+  $('#tDep').onchange=draw; $('#tEnc').onchange=draw; $('#tStatus').onchange=draw;
+  draw();
+}
+async function mudarStatusTarefa(id, st){
+  const patch={ status:st, concluida_em: st==='concluida'? new Date().toISOString() : null };
+  const {error}=await sb.from('tarefas').update(patch).eq('id',id);
+  if(error){ toast(error.message,'err'); return; }
+  toast(st==='concluida'?'Tarefa concluída ✔':'Status atualizado','ok'); render();
+}
+function andamentoModal(t){
+  if(!t) return;
+  openModal(`<div class="modal-h"><h3>📝 Andamento da tarefa</h3></div>
+    <div class="modal-b"><div class="card-sub" style="margin-bottom:8px">${esc(t.titulo)}</div>
+      <div class="fg"><label>Observações / evolução</label><textarea id="an_txt" rows="5" placeholder="O que já foi feito, pendências, próximos passos…">${esc(t.andamento||'')}</textarea></div></div>
+    <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="an_save">Salvar</button></div>`);
+  $('#an_save').onclick=async ()=>{
+    const {error}=await sb.from('tarefas').update({andamento:$('#an_txt').value.trim()}).eq('id',t.id);
+    if(error){ toast(error.message,'err'); return; }
+    closeModal(); toast('Andamento salvo','ok'); render();
+  };
+}
+function tarefaModal(t=null, profs=[]){
+  const opts=(profs||[]).map(p=>`<option value="${p.id}" ${t?.encarregado_id===p.id?'selected':''}>${esc(p.nome)}${p.departamento?' · '+(DEPTS[p.departamento]||p.departamento):''}</option>`).join('');
+  openModal(`<div class="modal-h"><h3>${t?'Editar':'Nova'} tarefa</h3></div>
+   <div class="modal-b"><div class="form-grid">
+     <div class="fg"><label>Título *</label><input id="t_tit" value="${esc(t?.titulo||'')}"></div>
+     <div class="fg"><label>Descrição</label><textarea id="t_desc">${esc(t?.descricao||'')}</textarea></div>
+     <div class="form-grid two">
+       <div class="fg"><label>Setor</label><select id="t_dep">${Object.entries(DEPTS_TODOS).map(([k,v])=>`<option value="${k}" ${(t?.departamento||state.profile.departamento||'todos')===k?'selected':''}>${v}</option>`).join('')}</select></div>
+       <div class="fg"><label>Encarregado</label><select id="t_enc"><option value="">— (definir depois)</option>${opts}</select></div>
+     </div>
+     <div class="form-grid two">
+       <div class="fg"><label>Prazo</label><input type="date" id="t_prazo" value="${t?.prazo||''}"></div>
+       <div class="fg"><label>Prioridade</label><select id="t_prio">${Object.entries(TAREFA_PRIOR).map(([k,v])=>`<option value="${k}" ${(t?.prioridade||'media')===k?'selected':''}>${v}</option>`).join('')}</select></div>
+     </div>
+   </div></div>
+   <div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="t_save">Salvar</button></div>`);
+  $('#t_save').onclick=async ()=>{
+    const rec={ titulo:$('#t_tit').value.trim(), descricao:$('#t_desc').value.trim(), departamento:$('#t_dep').value,
+      encarregado_id:$('#t_enc').value||null, prazo:$('#t_prazo').value||null, prioridade:$('#t_prio').value };
+    if(!rec.titulo) return toast('Informe um título.','err');
+    let error;
+    if(t){ ({error}=await sb.from('tarefas').update(rec).eq('id',t.id)); }
+    else { ({error}=await sb.from('tarefas').insert(rec)); }
+    if(error){ toast(error.message,'err'); return; }
+    closeModal(); toast('Tarefa salva','ok'); render();
+  };
 }
 
 /* ============================================================
