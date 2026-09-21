@@ -601,6 +601,7 @@ async function renderCalendario(c){
     $('#calList').querySelectorAll('[data-undo]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.undo,'agendada'));
     $('#calList').querySelectorAll('[data-postpone]').forEach(b=>b.onclick=()=>{const ev=evs.find(z=>z.id===b.dataset.postpone); if(ev) eventoModal(ev, ev.tipo);});
     $('#calList').querySelectorAll('[data-pauta]').forEach(b=>b.onclick=()=>{const ev=evs.find(z=>z.id===b.dataset.pauta); if(ev) pautaModal(ev);});
+    $('#calList').querySelectorAll('[data-zap]').forEach(b=>b.onclick=()=>{const ev=evs.find(z=>z.id===b.dataset.zap); if(ev) avisarClienteZap(ev);});
   }
   $('#calPrev').onclick=()=>{state.calRef=new Date(y,m-1,1);renderCalendario(c);};
   $('#calNext').onclick=()=>{state.calRef=new Date(y,m+1,1);renderCalendario(c);};
@@ -641,6 +642,7 @@ async function renderEventos(c,tipo){
     box.querySelectorAll('[data-undo]').forEach(b=>b.onclick=()=>marcarEvento(b.dataset.undo,'agendada'));
     box.querySelectorAll('[data-postpone]').forEach(b=>b.onclick=()=>{const e=evs.find(z=>z.id===b.dataset.postpone);eventoModal(e,tipo);});
     box.querySelectorAll('[data-pauta]').forEach(b=>b.onclick=()=>{const e=evs.find(z=>z.id===b.dataset.pauta);pautaModal(e);});
+    box.querySelectorAll('[data-zap]').forEach(b=>b.onclick=()=>{const e=evs.find(z=>z.id===b.dataset.zap);avisarClienteZap(e);});
   };
   if(tipo==='reuniao') await loadPautaCounts((evs||[]).map(e=>e.id));
   $('#fDep').onchange=draw; $('#fWhen').onchange=draw; draw();
@@ -672,7 +674,7 @@ function eventoCard(e){
   </div><div style="display:flex;gap:6px;align-items:center">${depChip(e.departamento)}${owner?`<div class="row-actions"><button class="icon-btn" data-edit="${e.id}">✎</button><button class="icon-btn" data-del="${e.id}">🗑</button></div>`:''}</div></div>
   ${e.descricao?`<div class="it-body">${esc(e.descricao)}</div>`:''}
   ${e.link?`<div class="it-body"><a href="${esc(e.link)}" target="_blank" style="color:#2b5aa8">🔗 ${esc(e.link)}</a></div>`:''}
-  ${e.tipo==='reuniao'?`<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" data-pauta="${e.id}">🗒 Assuntos da reunião${pautaCount[e.id]?' ('+pautaCount[e.id]+')':''}</button></div>`:''}
+  ${e.tipo==='reuniao'?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-pauta="${e.id}">🗒 Assuntos da reunião${pautaCount[e.id]?' ('+pautaCount[e.id]+')':''}</button>${(e.cliente_whatsapp||'').trim()?`<button class="btn btn-gold btn-sm" data-zap="${e.id}">📲 Avisar cliente</button>`:''}</div>`:''}
   ${acoes}${desfazer}</div>`;
 }
 // Pauta da reunião: qualquer setor adiciona assuntos a tratar
@@ -716,6 +718,19 @@ async function marcarEvento(id, status){
   toast(status==='realizada'?'Reunião marcada como realizada ✅':'Reaberto','ok');
   render();
 }
+function zapLinkCliente(e){
+  let d=(e.cliente_whatsapp||'').replace(/\D/g,'');
+  if(!d) return '';
+  if(d.length<=11 && d.slice(0,2)!=='55') d='55'+d; // adiciona DDI do Brasil se faltar
+  const nome=(e.cliente_nome||'').trim();
+  let msg='Olá'+(nome?' '+nome:'')+'! 👋\n\nConfirmando nossa reunião'+(e.titulo?': '+e.titulo:'')+'.'
+    +'\n🗓 '+fmtDateTime(e.data_inicio)
+    +(e.local?'\n📍 '+e.local:'')
+    +(e.link?'\n🔗 '+e.link:'')
+    +'\n\nQualquer dúvida, estamos à disposição.\n— Record Assessoria Contábil';
+  return 'https://wa.me/'+d+'?text='+encodeURIComponent(msg);
+}
+function avisarClienteZap(e){ const u=zapLinkCliente(e); if(!u){ toast('Cadastre o WhatsApp do cliente na reunião (editar).','err'); return; } window.open(u,'_blank'); }
 function viewEvento(e){
   const owner = e.created_by===state.profile.id || isGer();
   const passou = new Date(e.data_inicio).getTime() < Date.now();
@@ -734,6 +749,7 @@ function viewEvento(e){
       ${e.descricao?`<p style="margin-top:12px;line-height:1.5">${esc(e.descricao)}</p>`:''}
       ${e.link?`<p style="margin-top:10px"><a href="${esc(e.link)}" target="_blank" style="color:#2b5aa8">🔗 Abrir link</a></p>`:''}
       ${e.tipo==='reuniao'?`<div style="margin-top:14px"><button class="btn btn-gold btn-sm" id="ve_pauta">🗒 Assuntos da reunião</button></div>`:''}
+      ${(e.tipo==='reuniao'&&(e.cliente_whatsapp||'').trim())?`<div style="margin-top:10px"><button class="btn btn-gold btn-sm" id="ve_zap">📲 Avisar cliente no WhatsApp</button>${e.cliente_nome?`<div class="card-sub" style="margin-top:4px">Cliente: ${esc(e.cliente_nome)} · ${esc(e.cliente_whatsapp)}</div>`:''}</div>`:''}
       ${owner?`<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" id="ve_notify">🔔 Avisar a equipe</button></div>`:''}
     </div>
     <div class="modal-f">
@@ -750,6 +766,7 @@ function viewEvento(e){
     if(done) $('#ve_undo').onclick=()=>{ closeModal(); marcarEvento(e.id,'agendada'); };
   }
   const vp=$('#ve_pauta'); if(vp) vp.onclick=()=>pautaModal(e);
+  const vz=$('#ve_zap'); if(vz) vz.onclick=()=>avisarClienteZap(e);
   const vn=$('#ve_notify'); if(vn) vn.onclick=async ()=>{ vn.disabled=true; await notifyEvento(e); toast('Aviso enviado à equipe 🔔','ok'); };
 }
 function eventoModal(e=null,tipo='reuniao'){
@@ -770,6 +787,10 @@ function eventoModal(e=null,tipo='reuniao'){
        <div class="fg"><label>Responsável</label><input id="m_resp" value="${esc(e?.responsavel||'')}"></div>
      </div>
      <div class="fg"><label>Link (opcional)</label><input id="m_link" value="${esc(e?.link||'')}" placeholder="https://meet..."></div>
+     <div class="form-grid two">
+       <div class="fg"><label>Cliente (opcional)</label><input id="m_cli" value="${esc(e?.cliente_nome||'')}" placeholder="Nome do cliente"></div>
+       <div class="fg"><label>📲 WhatsApp do cliente</label><input id="m_zap" value="${esc(e?.cliente_whatsapp||'')}" placeholder="(00) 00000-0000" inputmode="tel"></div>
+     </div>
      <div class="fg"><label>Descrição</label><textarea id="m_desc">${esc(e?.descricao||'')}</textarea></div>
    </div></div>
    <div id="m_err" class="hidden" style="color:var(--danger);font-size:12.5px;padding:0 16px 6px;line-height:1.4"></div>
@@ -779,7 +800,8 @@ function eventoModal(e=null,tipo='reuniao'){
     const rec={titulo:$('#m_tit').value.trim(),tipo:$('#m_tipo').value,departamento:$('#m_dep').value,
       data_inicio:$('#m_ini').value?new Date($('#m_ini').value).toISOString():null,
       data_fim:$('#m_fim').value?new Date($('#m_fim').value).toISOString():null,
-      local:$('#m_loc').value.trim(),responsavel:$('#m_resp').value.trim(),link:$('#m_link').value.trim(),descricao:$('#m_desc').value.trim()};
+      local:$('#m_loc').value.trim(),responsavel:$('#m_resp').value.trim(),link:$('#m_link').value.trim(),descricao:$('#m_desc').value.trim(),
+      cliente_nome:$('#m_cli').value.trim(),cliente_whatsapp:$('#m_zap').value.trim()};
     if(!rec.titulo||!rec.data_inicio)return toast('Preencha título e data de início.','err');
     // Bloqueio: não permitir reuniões a menos de 30 min de outra (escritório todo)
     if(rec.tipo==='reuniao'){
