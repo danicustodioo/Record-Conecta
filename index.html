@@ -1085,6 +1085,7 @@ function gravarModal(r){
       const j=await res.json().catch(()=>({error:'Resposta inválida'}));
       if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
       setStatus('Ata gerada! ✅'); toast('Ata gerada com sucesso','ok');
+      await apagarAudioResultado(r.id, savedPaths); // ata salva: libera o áudio
       state.resTab='feito'; cleanup(); closeModal(); render();
     }catch(e){
       $('#rec_ata').disabled=false; $('#rec_more').disabled=false;
@@ -1142,6 +1143,7 @@ async function gerarAtaSalvo(r){
       body:JSON.stringify(body)});
     const j=await res.json().catch(()=>({error:'Resposta inválida'}));
     if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
+    await apagarAudioResultado(r.id, (Array.isArray(r.audio_paths)&&r.audio_paths.length)?r.audio_paths:(r.audio_path?[r.audio_path]:[])); // ata salva: libera o áudio
     state.resTab='feito'; closeModal(); toast('Ata gerada! ✅','ok'); render();
   }catch(e){ closeModal(); toast('Erro: '+(e.message||e),'err'); }
 }
@@ -1443,13 +1445,47 @@ async function renderSetor(c){
 ============================================================ */
 async function renderGerencia(c){
   if(!isGer()){c.innerHTML=`<div class="card">${emptyBox('Acesso restrito à gerência.','🔒')}</div>`;return;}
-  c.innerHTML=`<div class="subtabs">
+  c.innerHTML=`<div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div><b>🧹 Manutenção — armazenamento</b><div class="card-sub">Apaga os áudios das reuniões que já têm ata (as atas são mantidas). Libera espaço.</div></div>
+      <button class="btn btn-gold btn-sm" id="btnLimpaAudio">Liberar espaço</button>
+    </div>
+    <div class="subtabs">
     <button class="subtab" data-sub="setores">Setores</button>
     <button class="subtab" data-sub="plano">Plano Estratégico</button>
     <button class="subtab" data-sub="equipe">Colaboradores</button>
   </div><div id="gerBody"></div>`;
+  $('#btnLimpaAudio').onclick=limparAudiosAntigos;
   c.querySelectorAll('.subtab').forEach(b=>b.onclick=()=>{state.gerSub=b.dataset.sub;drawGer();});
   drawGer();
+}
+async function apagarAudioResultado(resId, paths){
+  try{
+    const ps=[...new Set((paths||[]).filter(Boolean))];
+    if(ps.length) await sb.storage.from('reunioes-audio').remove(ps);
+    if(resId) await sb.from('resultados_reuniao').update({audio_paths:[],audio_path:''}).eq('id',resId);
+  }catch(_){ /* não bloqueia */ }
+}
+async function limparAudiosAntigos(){
+  if(!isGer()) return;
+  const btn=$('#btnLimpaAudio'); if(btn){ btn.disabled=true; btn.textContent='Limpando…'; }
+  try{
+    const {data:rs}=await sb.from('resultados_reuniao').select('id,audio_paths,audio_path,transcricao');
+    const comAta=(rs||[]).filter(r=>(r.transcricao||'').trim());
+    let paths=[];
+    comAta.forEach(r=>{ if(Array.isArray(r.audio_paths)) paths.push(...r.audio_paths); if(r.audio_path) paths.push(r.audio_path); });
+    paths=[...new Set(paths.filter(Boolean))];
+    if(!paths.length){ toast('Nenhum áudio para limpar.','ok'); if(btn){btn.disabled=false;btn.textContent='Liberar espaço';} return; }
+    let removidos=0, erro='';
+    for(let i=0;i<paths.length;i+=100){
+      const lote=paths.slice(i,i+100);
+      const {error}=await sb.storage.from('reunioes-audio').remove(lote);
+      if(error){ erro=error.message; } else { removidos+=lote.length; }
+    }
+    if(comAta.length) await sb.from('resultados_reuniao').update({audio_paths:[],audio_path:''}).in('id', comAta.map(r=>r.id));
+    if(removidos) toast('✅ Espaço liberado: '+removidos+' áudio(s) removido(s)','ok');
+    else toast('Não consegui remover: '+(erro||'tente pelo painel do Supabase'),'err');
+  }catch(e){ toast('Erro: '+(e.message||e),'err'); }
+  if(btn){ btn.disabled=false; btn.textContent='Liberar espaço'; }
 }
 function drawGer(){
   document.querySelectorAll('.subtab').forEach(b=>b.classList.toggle('active',b.dataset.sub===state.gerSub));
