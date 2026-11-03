@@ -1,36 +1,46 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import {
   JANELAS_PADRAO,
   fmtDataBR,
   hojeISO,
   janelaAberta,
   janelaCancelamento,
-  type JanelaOpcao,
 } from "@/lib/tax-engine/janelas";
+import { aliquotaProvisoria, PARAMETROS_PADRAO } from "@/lib/tax-engine/parametros";
+import { useJanelasOpcao, useParametrosReforma } from "@/hooks/useBloco15A";
+
+// Bloco 15A — aviso enquanto a alíquota da CBS não for fixada pelo Senado.
+function AliquotaProvisoriaBar() {
+  const { data: params } = useParametrosReforma();
+  if (!aliquotaProvisoria(params ?? PARAMETROS_PADRAO)) return null;
+  return (
+    <div className="bg-amber-50 text-amber-900 border-b border-amber-200">
+      <div className="px-6 py-1.5 text-center text-xs font-medium">
+        Alíquota CBS provisória (TCU 28/10) — aguardando Resolução do Senado até 15/12/2026
+      </div>
+    </div>
+  );
+}
+
+export function CountdownBar() {
+  return (
+    <>
+      <JanelaBar />
+      <AliquotaProvisoriaBar />
+    </>
+  );
+}
 
 // Bloco 15A — banner enquanto a janela de cancelamento estiver aberta (Res. CGSN 194/2026).
 // Fora da janela, mostra a contagem até a próxima janela aberta ou futura.
-export function CountdownBar() {
+function JanelaBar() {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
 
-  const { data: janelas } = useQuery({
-    queryKey: ["janelas-opcao"],
-    staleTime: 60 * 60 * 1000,
-    queryFn: async (): Promise<JanelaOpcao[]> => {
-      const { data, error } = await supabase
-        .from("janelas_opcao" as never)
-        .select("descricao, data_inicio, data_fim, periodo_efeito, irretratavel, fonte")
-        .order("data_inicio");
-      if (error || !data || !(data as unknown[]).length) return JANELAS_PADRAO;
-      return data as unknown as JanelaOpcao[];
-    },
-  });
+  const { data: janelas } = useJanelasOpcao();
 
   const lista = janelas ?? JANELAS_PADRAO;
   const hoje = hojeISO(new Date(now));

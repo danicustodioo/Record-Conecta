@@ -182,6 +182,11 @@ export interface DecisaoSimples {
   receita_liquida_regular_com_reajuste: number;
   ganho_regular_sem_reajuste: number;
   ganho_regular_com_reajuste: number;
+  // A opção pelo regime regular vale só para jan–jun/2027; em jul–dez volta ao DAS (salvo nova opção em março/2027).
+  vigencia_regime_regular: string;
+  ganho_1o_semestre_sem_reajuste: number;
+  ganho_1o_semestre_com_reajuste: number;
+  carga_2027_ano_civil: number; // jan–jun no regime regular + jul–dez no Simples unificado
   base_creditavel_atual_pct: number;
   base_creditavel_minima_pct: number;
   condicoes: CondicaoDecisao[];
@@ -647,6 +652,8 @@ export function calcHibrido(i: InputCalculo): ResultadoCenario {
   const carga = dasReduzido + ivaPagar;
 
   const obs = [
+    "Vale só para jan a jun/2027 (Res. CGSN 194/2026). No 2º semestre a empresa volta automaticamente ao DAS " +
+      "unificado, salvo nova opção em março/2027. Valores mostrados na mesma base de período dos demais cenários.",
     "IBS e CBS fora do DAS (regime regular), com as reduções setoriais da LC 214/2025 e crédito sobre compras.",
     "O cliente PJ do regime regular passa a se creditar da alíquota cheia do item, e não só do valor embutido no DAS.",
     OBS_PARTILHA_2027,
@@ -683,6 +690,7 @@ export function calcHibrido(i: InputCalculo): ResultadoCenario {
       ibs_liquido: Math.max(0, deb.ibs.total - credIBS),
       iva_a_pagar: ivaPagar,
       saldo_credor: saldoCredor,
+      semestres_vigencia: 1, // jan–jun/2027
       cpp: cppSeparado,
       split_payment_pct: pct(deb.total, i.receita_anual),
     },
@@ -717,6 +725,10 @@ export function creditoTransferido(i: InputCalculo, cenario: "unificado" | "regu
 }
 
 const MIN_PJ_REGULAR = 0.7;
+// Res. CGSN 194/2026: a opção feita até 30/10/2026 vale para jan a jun/2027.
+// No 2º semestre a empresa volta automaticamente ao DAS unificado, salvo nova opção em março/2027.
+const VIGENCIA_OPCAO_REGULAR = "jan a jun/2027";
+const FRACAO_SEMESTRE = 0.5;
 
 function pctPjRegular(i: InputCalculo): number | null {
   const perfil = i.perfil_clientes ?? [];
@@ -811,6 +823,10 @@ function decisaoSimples(i: InputCalculo, B: ResultadoCenario, C: ResultadoCenari
     receita_liquida_regular_com_reajuste: rlCReaj,
     ganho_regular_sem_reajuste: rlC - rlB,
     ganho_regular_com_reajuste: rlCReaj - rlB,
+    vigencia_regime_regular: VIGENCIA_OPCAO_REGULAR,
+    ganho_1o_semestre_sem_reajuste: (rlC - rlB) * FRACAO_SEMESTRE,
+    ganho_1o_semestre_com_reajuste: (rlCReaj - rlB) * FRACAO_SEMESTRE,
+    carga_2027_ano_civil: cargaC * FRACAO_SEMESTRE + cargaB * (1 - FRACAO_SEMESTRE),
     base_creditavel_atual_pct: baseAtual,
     base_creditavel_minima_pct: baseMinima,
     condicoes,

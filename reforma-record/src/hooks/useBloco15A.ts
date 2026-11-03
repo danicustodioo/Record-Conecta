@@ -19,11 +19,13 @@ export function useParametrosReforma() {
       const { data, error } = await supabase.from("parametros_reforma").select("*");
       if (error || !data?.length) return PARAMETROS_PADRAO;
       const rows = data as unknown as Array<Record<string, unknown>>;
-      const comRef = rows.filter((r) => r.aliquota_cbs_referencia != null);
-      const linha = (comRef.length ? comRef : rows).sort((a, b) =>
-        String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? "")),
+      // Prefere a linha com os campos do Bloco 15A; depois a mais recente.
+      const linha = [...rows].sort(
+        (a, b) =>
+          Number(b.aliquota_cbs_referencia != null) - Number(a.aliquota_cbs_referencia != null) ||
+          String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? "")),
       )[0];
-      return comRef.length ? normalizarParametros(linha) : PARAMETROS_PADRAO;
+      return normalizarParametros(linha);
     },
   });
 }

@@ -25,6 +25,10 @@ export type DecisaoSimplesView = {
   receita_liquida_regular_com_reajuste: number;
   ganho_regular_sem_reajuste: number;
   ganho_regular_com_reajuste: number;
+  vigencia_regime_regular?: string;
+  ganho_1o_semestre_sem_reajuste?: number;
+  ganho_1o_semestre_com_reajuste?: number;
+  carga_2027_ano_civil?: number;
   base_creditavel_atual_pct: number;
   base_creditavel_minima_pct: number;
   condicoes: Condicao[];
@@ -199,7 +203,32 @@ export function DecisaoSimplesCard({ d }: { d: DecisaoSimplesView }) {
             valor={sinal(d.ganho_regular_com_reajuste)}
             destaque
           />
+          {d.ganho_1o_semestre_sem_reajuste != null && (
+            <>
+              <Linha
+                label="Efeito real da opção (só jan–jun/2027), sem reajuste"
+                valor={sinal(d.ganho_1o_semestre_sem_reajuste)}
+              />
+              <Linha
+                label="Efeito real da opção (só jan–jun/2027), com reajuste"
+                valor={sinal(d.ganho_1o_semestre_com_reajuste ?? 0)}
+              />
+            </>
+          )}
         </div>
+      </div>
+
+      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        A opção pelo regime regular vale só para{" "}
+        <strong>{d.vigencia_regime_regular ?? "jan a jun/2027"}</strong>. No 2º semestre a empresa
+        volta automaticamente ao DAS unificado, salvo nova opção em março/2027 (Res. CGSN 194/2026).
+        {d.carga_2027_ano_civil != null && (
+          <>
+            {" "}
+            Carga de 2027 com a opção: {formatBRL(d.carga_2027_ano_civil)} (1º semestre no regime
+            regular + 2º no Simples).
+          </>
+        )}
       </div>
 
       <div className="rounded-md bg-muted/40 p-3 text-xs">

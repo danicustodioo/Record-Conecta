@@ -41,6 +41,13 @@ export function aliquotas2027(p: ParametrosReforma = PARAMETROS_PADRAO): Aliquot
 export const CBS_2027_PADRAO = aliquotas2027(PARAMETROS_PADRAO).cbs;
 export const IBS_2027_PADRAO = aliquotas2027(PARAMETROS_PADRAO).ibs;
 
+const ALIQUOTA_MINIMA_VALIDA = 0.09;
+
+/** true enquanto a alíquota da CBS for a calculada pelo TCU, sem resolução do Senado. */
+export function aliquotaProvisoria(p: ParametrosReforma = PARAMETROS_PADRAO): boolean {
+  return p.status_aliquota === "calculada_tcu_pendente_senado";
+}
+
 const num = (v: unknown, fallback: number): number => {
   const n = Number(v);
   return v != null && v !== "" && Number.isFinite(n) && n >= 0 ? n : fallback;
@@ -50,10 +57,15 @@ const num = (v: unknown, fallback: number): number => {
 export function normalizarParametros(row?: Record<string, unknown> | null): ParametrosReforma {
   if (!row) return PARAMETROS_PADRAO;
   const d = PARAMETROS_PADRAO;
-  const ref = num(row.aliquota_cbs_referencia, NaN);
+  const redutor = num(row.redutor_transicao_cbs, d.redutor_transicao_cbs);
+  let ref = num(row.aliquota_cbs_referencia, NaN);
+  // Sem a coluna nova, usa `aliquota_cbs` (CBS efetiva de 2027 = referência − redutor).
+  // Valores abaixo de 9% são a estimativa antiga (8,8%) e são ignorados.
+  const cbsEfetiva = num(row.aliquota_cbs, NaN);
+  if (!(ref > 0) && cbsEfetiva >= ALIQUOTA_MINIMA_VALIDA) ref = cbsEfetiva + redutor;
   return {
     aliquota_cbs_referencia: Number.isFinite(ref) && ref > 0 ? ref : d.aliquota_cbs_referencia,
-    redutor_transicao_cbs: num(row.redutor_transicao_cbs, d.redutor_transicao_cbs),
+    redutor_transicao_cbs: redutor,
     aliquota_ibs_estadual: num(row.aliquota_ibs_estadual, d.aliquota_ibs_estadual),
     aliquota_ibs_municipal: num(row.aliquota_ibs_municipal, d.aliquota_ibs_municipal),
     status_aliquota: (row.status_aliquota as string) || d.status_aliquota,

@@ -356,7 +356,7 @@ export function AnalysisDashboard({
         <p>{r.parametros_reforma ? rodapeAliquota(r.parametros_reforma) : RODAPE_CBS}</p>
         <p className="mt-2">
           <strong>Aviso Legal:</strong> Os valores são estimativas baseadas nas alíquotas de referência da
-          LC 214/2025 (IBS: 17,7%) e nas tabelas do Simples Nacional vigentes. Alíquotas
+          LC 214/2025 (em 2027–2028: IBS de 0,10%, sendo 0,05% estadual e 0,05% municipal) e nas tabelas do Simples Nacional vigentes. Alíquotas
           definitivas do IBS serão fixadas pelo Comitê Gestor após deliberação do Senado e podem variar.
           Este relatório tem caráter informativo e não substitui o assessoramento contábil individualizado
           da Record Assessoria Contábil Ltda. CRC PR-013833 · José A. Custódio. Emitido em {formatDate(analise.created_at)}
@@ -766,7 +766,7 @@ function ComposicaoDonut({ cenario }: { cenario: Cenario }) {
     // Saldo credor é crédito a compensar, não parcela da carga paga.
     "saldo_credor", "saldo",
     // Bloco 15A: referências e totais que não são parcelas da carga.
-    "faixa", "rbt12", "p_cbs", "p_ibs", "credito_transferido", "iss_ou_ipi",
+    "faixa", "rbt12", "semestres", "p_cbs", "p_ibs", "credito_transferido", "iss_ou_ipi",
     "das_anual", "das_a_recolher", "das_cheio", "das_reduzido_a_recolher", "iss_retido", "iva_a_pagar",
   ];
   const fatias = Object.entries(cenario.detalhamento)

@@ -17,7 +17,12 @@ import {
   precoEquilibrio,
   type InputCalculo,
 } from "../calc";
-import { aliquotas2027, PARAMETROS_PADRAO } from "../parametros";
+import {
+  aliquotaProvisoria,
+  aliquotas2027,
+  normalizarParametros,
+  PARAMETROS_PADRAO,
+} from "../parametros";
 import { encontrarFaixa, partilhaSimples, somaPartilha, TABELA_SIMPLES } from "../simples-tabelas";
 import { analisarFatorR } from "../fator-r";
 import { aliquotaEfetiva as aliquotaSetorial, regimePorTipo } from "@/lib/enquadramento";
@@ -188,4 +193,32 @@ test("crédito de fornecedor do Simples segue art. 47, §9º, II", () => {
   // 10.000 × 4% (1ª faixa do Anexo I) × 15,33% (CBS) e × 0,17% (IBS)
   perto(C.detalhamento.cbs_creditos, 10_000 * 0.04 * 0.1533, 1e-6, "crédito CBS");
   perto(C.detalhamento.ibs_creditos, 10_000 * 0.04 * 0.0017, 1e-6, "crédito IBS");
+});
+
+test("cenário C vale só para jan–jun/2027: carga do ano = 1º semestre regular + 2º unificado", () => {
+  const r = calcularTodos(jMorais);
+  const d = r.simples_decisao!;
+  assert.equal(d.vigencia_regime_regular, "jan a jun/2027");
+  perto(d.carga_2027_ano_civil, (d.carga_regular + d.carga_unificado) / 2, 1e-9, "carga 2027");
+  perto(d.ganho_1o_semestre_sem_reajuste, d.ganho_regular_sem_reajuste / 2, 1e-9, "ganho semestre");
+});
+
+test("IBS do cenário C é 0,10% (nunca 17,7%)", () => {
+  const C = calcHibrido(jMorais);
+  // saúde −60%: 35.119,10 × 0,10% × 0,4
+  perto(C.detalhamento.ibs_bruto, RECEITA * 0.001 * 0.4, 1e-6, "IBS bruto");
+});
+
+test("parâmetros do banco: usa aliquota_cbs quando faltam as colunas novas e ignora o 8,8% antigo", () => {
+  const novo = normalizarParametros({ aliquota_cbs: 0.112 });
+  perto(novo.aliquota_cbs_referencia, 0.113, 1e-9, "referência a partir de aliquota_cbs");
+  const antigo = normalizarParametros({ aliquota_cbs: 0.088 });
+  perto(
+    antigo.aliquota_cbs_referencia,
+    PARAMETROS_PADRAO.aliquota_cbs_referencia,
+    1e-9,
+    "8,8% ignorado",
+  );
+  assert.ok(aliquotaProvisoria(PARAMETROS_PADRAO));
+  assert.ok(!aliquotaProvisoria({ ...PARAMETROS_PADRAO, status_aliquota: "fixada_senado" }));
 });
