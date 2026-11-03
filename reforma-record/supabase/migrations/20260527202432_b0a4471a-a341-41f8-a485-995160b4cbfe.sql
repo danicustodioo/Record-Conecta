@@ -1,0 +1,1 @@
+ALTER TABLE public.analises ADD COLUMN IF NOT EXISTS diagnostico_ia jsonb;

@@ -1,0 +1,1 @@
+UPDATE public.clientes SET rbt12 = 3999972.23, updated_at = now() WHERE id = '0702aba9-bc74-4167-a407-836bd7f5ab9f';

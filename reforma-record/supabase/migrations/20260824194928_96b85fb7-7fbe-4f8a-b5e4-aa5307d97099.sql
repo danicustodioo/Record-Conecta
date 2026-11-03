@@ -1,0 +1,1 @@
+CREATE POLICY "allow authenticated uploads" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'pdfs');

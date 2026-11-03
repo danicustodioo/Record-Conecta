@@ -1,0 +1,2 @@
+CREATE POLICY "allow authenticated select" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'pdfs');
+CREATE POLICY "allow authenticated delete" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'pdfs');

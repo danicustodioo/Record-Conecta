@@ -1,0 +1,162 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   Record Hub — Record Assessoria
+   Luxury Financial · Navy + Champagne Gold
+   ============================================================ */
+
+@theme inline {
+  --font-display: "Playfair Display", "Cormorant Garamond", Georgia, serif;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-4xl: 32px;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+
+  --color-navy: var(--navy);
+  --color-navy-foreground: var(--navy-foreground);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-off-white: var(--off-white);
+
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --shadow-elegant: 0 4px 24px rgba(13, 33, 55, 0.08);
+  --shadow-elevated: 0 12px 40px rgba(13, 33, 55, 0.16);
+}
+
+:root {
+  --radius: 0.5rem;
+
+  /* Brand */
+  --navy: oklch(0.252 0.046 252);             /* #0D2137 */
+  --navy-foreground: oklch(0.98 0.01 90);
+  --gold: oklch(0.755 0.085 80);              /* #C9A96E */
+  --gold-foreground: oklch(0.252 0.046 252);
+  --off-white: oklch(0.965 0.003 250);        /* #F2F3F5 */
+
+  /* Surface */
+  --background: oklch(0.988 0 0);
+  --foreground: oklch(0.252 0.046 252);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.252 0.046 252);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.252 0.046 252);
+
+  /* Semantic */
+  --primary: oklch(0.252 0.046 252);
+  --primary-foreground: oklch(0.98 0.01 90);
+  --secondary: oklch(0.965 0.003 250);
+  --secondary-foreground: oklch(0.252 0.046 252);
+  --muted: oklch(0.965 0.003 250);
+  --muted-foreground: oklch(0.55 0.02 250);   /* #6B7A8D */
+  --accent: oklch(0.755 0.085 80);
+  --accent-foreground: oklch(0.252 0.046 252);
+  --destructive: oklch(0.55 0.18 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.92 0.005 250);
+  --input: oklch(0.92 0.005 250);
+  --ring: oklch(0.755 0.085 80);
+
+  /* Status */
+  --success: oklch(0.50 0.10 152);            /* #1E6E4A */
+  --success-bg: oklch(0.96 0.025 152);
+  --warning: oklch(0.62 0.13 60);             /* #C47520 */
+  --warning-bg: oklch(0.97 0.04 80);
+  --danger:  oklch(0.55 0.16 22);             /* #B94040 */
+  --danger-bg: oklch(0.97 0.025 22);
+  --info:    oklch(0.45 0.13 255);            /* #1A56A0 */
+  --info-bg: oklch(0.96 0.03 255);
+
+  --chart-1: oklch(0.50 0.10 152);  /* Simples Tradicional - verde */
+  --chart-2: oklch(0.65 0.13 60);   /* Híbrido - laranja */
+  --chart-3: oklch(0.45 0.13 255);  /* Lucro Real - azul */
+  --chart-4: oklch(0.55 0.16 22);   /* Lucro Presumido - vermelho */
+  --chart-5: oklch(0.755 0.085 80); /* Gold */
+
+  --sidebar: oklch(0.252 0.046 252);
+  --sidebar-foreground: oklch(0.95 0.01 90);
+  --sidebar-primary: oklch(0.755 0.085 80);
+  --sidebar-primary-foreground: oklch(0.252 0.046 252);
+  --sidebar-accent: oklch(0.30 0.045 252);
+  --sidebar-accent-foreground: oklch(0.98 0.01 90);
+  --sidebar-border: oklch(0.755 0.085 80 / 25%);
+  --sidebar-ring: oklch(0.755 0.085 80);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body { height: 100%; }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4, h5 { font-family: var(--font-display); letter-spacing: -0.01em; }
+  .label-uppercase { font-family: var(--font-sans); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72rem; font-weight: 500; color: var(--color-muted-foreground); }
+  .gold-divider { height: 1px; background: var(--color-gold); opacity: 0.4; }
+  .num-display { font-family: var(--font-display); font-weight: 700; font-variant-numeric: tabular-nums; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(90deg, var(--muted) 0%, color-mix(in oklab, var(--muted) 60%, white) 50%, var(--muted) 100%);
+  background-size: 1000px 100%;
+  animation: shimmer 1.6s infinite linear;
+}
