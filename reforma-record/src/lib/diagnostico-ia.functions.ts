@@ -2,12 +2,14 @@
 // (via Lovable AI Gateway) e armazena em analises.diagnostico_ia.
 
 import { createServerFn } from "@tanstack/react-start";
+import { CBS_2027_PADRAO } from "@/lib/tax-engine/parametros";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const REGIME_LABEL: Record<string, string> = {
   SIMPLES: "Simples Nacional",
-  HIBRIDO: "Simples Híbrido",
+  SIMPLES_2027: "Simples unificado 2027",
+  HIBRIDO: "Simples + regime regular IBS/CBS",
   LP: "Lucro Presumido",
   LR: "Lucro Real",
   LP_2026: "Lucro Presumido (2026)",
@@ -121,14 +123,14 @@ export const gerarDiagnosticoIA = createServerFn({ method: "POST" })
               `${l.reducao_negada_societaria ? " [REDUÇÃO NEGADA: quadro societário não confirmado]" : ""}`,
           )
           .join("\n")}\nAlíquota média efetiva de CBS desta empresa: ${(
-            (r.cbs_aliquota_media_efetiva ?? 0.088) * 100
-          ).toFixed(3)}% (base de referência: ${((r.cbs_aliquota_base ?? 0.088) * 100).toFixed(1)}% [status: estimativa, art. 349]).${
+            (r.cbs_aliquota_media_efetiva ?? CBS_2027_PADRAO) * 100
+          ).toFixed(3)}% (base de referência: ${((r.cbs_aliquota_base ?? CBS_2027_PADRAO) * 100).toFixed(1)}% [status: calculada pelo TCU, pendente de resolução do Senado até 15/12/2026]).${
             Number((r as { saldo_credor_cbs?: number }).saldo_credor_cbs ?? 0) > 0
               ? `\nSALDO CREDOR DE CBS APURADO: R$ ${Number((r as { saldo_credor_cbs?: number }).saldo_credor_cbs).toFixed(0)} — crédito das entradas superior ao débito reduzido das saídas.`
               : ""
           }\n`
       : `\nATENÇÃO: a receita NÃO foi segregada por linha. O cálculo aplicou a alíquota cheia de ${(
-          (r.cbs_aliquota_base ?? 0.088) * 100
+          (r.cbs_aliquota_base ?? CBS_2027_PADRAO) * 100
         ).toFixed(1)}% sobre toda a receita. Cite isso como ponto de alerta e recomende a segregação.\n`;
 
     const alertasTxt = (r.alertas ?? []).length
@@ -158,8 +160,8 @@ ${cenariosTxt}
 ${inelegiveisTxt}${enquadramentoTxt}${alertasTxt}
 REGRAS ABSOLUTAS SOBRE ALÍQUOTAS:
 - NUNCA invente, arredonde ou generalize alíquotas. Use exclusivamente os percentuais listados acima.
-- NUNCA afirme que a empresa paga 8,8% de CBS quando houver linha com redução setorial: cite a alíquota efetiva da linha.
-- Trate a alíquota base como ESTIMATIVA pendente de fixação pelo Senado Federal até 31/10/2026 (art. 349).
+- NUNCA afirme que a empresa paga a alíquota cheia de CBS quando houver linha com redução setorial: cite a alíquota efetiva da linha.
+- Trate a alíquota base como calculada pelo TCU e pendente de resolução do Senado Federal até 15/12/2026 (LC 214/2025, art. 14).
 - Ao citar um benefício setorial, mencione o artigo da LC 214/2025 indicado na linha.
 - Quando a linha vedar crédito ao adquirente, alerte sobre a perda de competitividade em vendas B2B.
 - Não afirme que reduções se acumulam: cada linha de receita tem um único enquadramento.
@@ -170,7 +172,7 @@ Gere EXATAMENTE 3 seções, cada uma com 3 itens curtos e específicos a esta em
 3. solucoes: ações práticas com prazo (datas/marcos entre 2026 e 2033)
 
 Cada item tem "titulo" (até 8 palavras) e "descricao" (1-2 frases concretas com números reais).
-Soluções têm também "prazo" (ex: "Até 30/09/2026", "Jan/2027", "2033").`;
+Soluções têm também "prazo" (ex: "Até 20/12/2026", "Jan/2027", "2033").`;
 
 
     const body = {

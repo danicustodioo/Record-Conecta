@@ -2,6 +2,8 @@
 // A alíquota deixa de ser constante: é resolvida por tipo de receita (LC 214/2025).
 // Funções puras, sem acesso a banco — os regimes são passados como dicionário.
 
+import { rodapeAliquota } from "@/lib/tax-engine/parametros";
+
 export type RegimeSetorial = {
   tipo_receita: string;
   descricao: string;
@@ -119,6 +121,16 @@ export const REGIMES_SETORIAIS_FALLBACK: Record<string, RegimeSetorial> = {
     artigo: "LC 214/2025, art. 261, parágrafo único",
     status: "lei",
   },
+  educacao: {
+    tipo_receita: "educacao",
+    descricao: "Serviços de educação listados no Anexo II",
+    reducao: 0.6,
+    monofasico: false,
+    gera_credito_adquirente: true,
+    requer_validacao_societaria: false,
+    artigo: "LC 214/2025, art. 129 e Anexo II",
+    status: "lei",
+  },
   regular: {
     tipo_receita: "regular",
     descricao: "Regime regular — alíquota cheia",
@@ -141,7 +153,7 @@ export function regimePorTipo(
 
 /**
  * Alíquota CBS efetiva de uma linha de receita.
- * `aliquotaBase` vem dos parâmetros da reforma (hoje 0,088).
+ * `aliquotaBase` vem dos parâmetros da reforma (parametros_reforma).
  * Os benefícios NÃO se acumulam: cada linha tem um único tipo_receita.
  */
 export function aliquotaEfetiva(
@@ -204,11 +216,8 @@ export function tipoReceitaPorCnae(cnae?: string | null): string {
 }
 
 // Rodapé legal obrigatório em toda página de cálculo.
-export const RODAPE_CBS =
-  "Alíquota base de CBS estimada em 8,8%, pendente de fixação oficial pelo Senado Federal até 31/10/2026 " +
-  "(art. 349 da LC 214/2025). As reduções setoriais aplicadas decorrem de dispositivos vigentes da " +
-  "LC 214/2025, indicados linha a linha. Cenários serão recalculados automaticamente após a publicação " +
-  "da alíquota oficial.";
+// Bloco 15A: texto gerado a partir dos parâmetros (sem alíquota fixa no código).
+export const RODAPE_CBS = rodapeAliquota();
 
 /**
  * Crédito de CBS de um fornecedor considerando regime tributário E setor.

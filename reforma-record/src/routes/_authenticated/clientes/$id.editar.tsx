@@ -21,6 +21,7 @@ import { Slider } from "@/components/ui/slider";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ArrowLeft, Trash2 } from "lucide-react";
+import { PerfilClientesEditor } from "@/components/clientes/PerfilClientesEditor";
 
 export const Route = createFileRoute("/_authenticated/clientes/$id/editar")({
   component: EditarClientePage,
@@ -75,6 +76,13 @@ const schema = z.object({
   tem_contrato_anterior_16012025: z.boolean().optional(),
   aliquota_iss_municipal: z.coerce.number().min(0).max(10).optional(),
   perfil_clientes: z.enum(["b2b", "b2c", "misto", "indefinido"]).optional(),
+  // Bloco 15A
+  optou_regime_regular: z.enum(["sim", "nao", "indefinido"]).optional(),
+  data_opcao_regime_regular: z.string().optional().or(z.literal("")),
+  repasse_preco_confirmado: z.enum(["sim", "nao", "indefinido"]).optional(),
+  pct_receita_iss_retido: z.coerce.number().min(0).max(100).optional(),
+  sujeito_fator_r: z.enum(["sim", "nao", "indefinido"]).optional(),
+  folha_12m: z.coerce.number().min(0).optional(),
   email_cliente: z.string().email("E-mail inválido").optional().or(z.literal("")),
   observacoes: z.string().optional().or(z.literal("")),
 });
@@ -133,7 +141,14 @@ function EditarClientePage() {
       tem_contrato_anterior_16012025?: boolean | null;
       aliquota_iss_municipal?: number | null;
       perfil_clientes?: string | null;
+      optou_regime_regular?: boolean | null;
+      data_opcao_regime_regular?: string | null;
+      repasse_preco_confirmado?: boolean | null;
+      pct_receita_iss_retido?: number | null;
+      sujeito_fator_r?: boolean | null;
+      folha_12m?: number | null;
     };
+    const tri = (v?: boolean | null) => (v == null ? "indefinido" : v ? "sim" : "nao");
     form.reset({
       razao_social: cliente.razao_social ?? "",
       nome_fantasia: cliente.nome_fantasia ?? "",
@@ -155,6 +170,13 @@ function EditarClientePage() {
       tem_contrato_anterior_16012025: extra.tem_contrato_anterior_16012025 ?? false,
       aliquota_iss_municipal: extra.aliquota_iss_municipal ?? undefined,
       perfil_clientes: (extra.perfil_clientes as "b2b" | "b2c" | "misto" | null) ?? "indefinido",
+      optou_regime_regular: tri(extra.optou_regime_regular),
+      data_opcao_regime_regular: extra.data_opcao_regime_regular ?? "",
+      repasse_preco_confirmado: tri(extra.repasse_preco_confirmado),
+      pct_receita_iss_retido:
+        extra.pct_receita_iss_retido != null ? Math.round(Number(extra.pct_receita_iss_retido) * 10000) / 100 : undefined,
+      sujeito_fator_r: tri(extra.sujeito_fator_r),
+      folha_12m: extra.folha_12m != null ? Number(extra.folha_12m) : undefined,
       email_cliente: cliente.email_cliente ?? "",
       observacoes: cliente.observacoes ?? "",
     });
@@ -191,6 +213,16 @@ function EditarClientePage() {
         aliquota_iss_municipal: values.aliquota_iss_municipal ?? null,
         perfil_clientes:
           values.perfil_clientes && values.perfil_clientes !== "indefinido" ? values.perfil_clientes : null,
+        // Bloco 15A
+        optou_regime_regular: triParaBool(values.optou_regime_regular),
+        data_opcao_regime_regular: values.data_opcao_regime_regular || null,
+        repasse_preco_confirmado: triParaBool(values.repasse_preco_confirmado),
+        pct_receita_iss_retido:
+          values.pct_receita_iss_retido != null && !Number.isNaN(values.pct_receita_iss_retido)
+            ? values.pct_receita_iss_retido / 100
+            : null,
+        sujeito_fator_r: triParaBool(values.sujeito_fator_r),
+        folha_12m: values.folha_12m && values.folha_12m > 0 ? values.folha_12m : null,
         email_cliente: values.email_cliente || null,
         observacoes: values.observacoes || null,
       } as never)
@@ -404,6 +436,60 @@ function EditarClientePage() {
           </Field>
         </Card>
 
+        {/* Bloco 15A — Simples em 2027: dados da decisão (adição) */}
+        <Card className="p-6 space-y-5">
+          <div>
+            <p className="label-uppercase">Simples Nacional em 2027 — dados da decisão</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Usados no Fator R, no crédito transferido e na regra de recomendação do regime regular de IBS/CBS.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Optou pelo regime regular de IBS/CBS para 2027?">
+              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" {...form.register("optou_regime_regular")}>
+                <option value="indefinido">Não informado</option>
+                <option value="sim">Sim, optou</option>
+                <option value="nao">Não optou</option>
+              </select>
+            </Field>
+            <Field label="Data da opção">
+              <Input type="date" {...form.register("data_opcao_regime_regular")} />
+            </Field>
+            <Field label="Repasse de preço confirmado (contratos renegociáveis até 31/12/2026)">
+              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" {...form.register("repasse_preco_confirmado")}>
+                <option value="indefinido">Não informado</option>
+                <option value="sim">Sim, repasse viável</option>
+                <option value="nao">Não</option>
+              </select>
+            </Field>
+            <Field label="% da receita com ISS retido pelo tomador" error={form.formState.errors.pct_receita_iss_retido?.message}>
+              <Input type="number" step="0.01" min="0" max="100" placeholder="ex.: 33,65" {...form.register("pct_receita_iss_retido")} />
+            </Field>
+            <Field label="Atividade sujeita ao Fator R (Anexo III ou V)?">
+              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" {...form.register("sujeito_fator_r")}>
+                <option value="indefinido">Não informado (aplicar se Anexo III/V)</option>
+                <option value="sim">Sim</option>
+                <option value="nao">Não — anexo fixo</option>
+              </select>
+            </Field>
+            <Field label="Folha 12 meses para o Fator R (R$)">
+              <Controller
+                control={form.control}
+                name="folha_12m"
+                render={({ field }) => (
+                  <CurrencyInput value={Number(field.value ?? 0)} onChange={field.onChange} placeholder="0,00" />
+                )}
+              />
+            </Field>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Folha 12 meses: salários, pró-labore, 13º, FGTS e encargos. Em branco, o motor usa a folha extraída da análise.
+          </p>
+          <div className="pt-2 border-t">
+            <PerfilClientesEditor clienteId={id} />
+          </div>
+        </Card>
+
         <div className="flex justify-between items-center gap-3">
           <Button
             type="button"
@@ -425,6 +511,10 @@ function EditarClientePage() {
       </form>
     </div>
   );
+}
+
+function triParaBool(v?: "sim" | "nao" | "indefinido"): boolean | null {
+  return v === "sim" ? true : v === "nao" ? false : null;
 }
 
 function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {

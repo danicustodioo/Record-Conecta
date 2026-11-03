@@ -16,7 +16,7 @@ import {
 import { CheckCircle2, AlertTriangle, XCircle, Pencil, Save, Plus } from "lucide-react";
 import { formatBRL } from "@/lib/format";
 import {
-  consolidarCreditos, type CenarioCredito, type ConsolidadoCreditos,
+  consolidarCreditos, calcularCreditoFornecedor, type CenarioCredito, type ConsolidadoCreditos,
 } from "@/lib/fornecedores/creditos";
 import type { FornecedorClassificado, RegimeFornecedor } from "@/lib/fornecedores/classificador";
 
@@ -219,10 +219,11 @@ export function FornecedoresDashboard({ fornecedores, receitaAnual, totalCompras
             </thead>
             <tbody>
               {filteredSorted.map((f, idx) => {
-                const c = (f.valor_anual ?? 0) * 0.265;
-                const cbs = (f.valor_anual ?? 0) * 0.088;
-                const ibs = (f.valor_anual ?? 0) * 0.177;
-                const cred = (f.regime === "NORMAL" || (f.regime === "SIMPLES" && f.opcao_hibrido)) ? c : f.regime === "SIMPLES" ? (f.valor_anual ?? 0) * 0.059 : 0;
+                // Bloco 15A: mesma regra do consolidado (alíquotas de 2027 e art. 47, §9º, II).
+                const credF = calcularCreditoFornecedor(f, "HIBRIDO_2027");
+                const cbs = credF.credito_cbs;
+                const ibs = credF.credito_ibs;
+                const cred = credF.credito_total;
                 const pct = main.credito_total > 0 ? (cred / main.credito_total) * 100 : 0;
                 return (
                   <tr key={`${f.nome}-${idx}`} className="border-b hover:bg-off-white/40">

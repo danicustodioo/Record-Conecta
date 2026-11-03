@@ -1,6 +1,7 @@
 // Gera diagnóstico completo em PDF: capa, sumário executivo, pontos fortes/fracos/atenção,
 // auditoria do cálculo de CBS 2027 e todas as seções do dashboard renderizadas como imagem.
 import { jsPDF } from "jspdf";
+import { CBS_2027_PADRAO } from "@/lib/tax-engine/parametros";
 import autoTable from "jspdf-autotable";
 import { toCanvas } from "html-to-image";
 import { formatBRL, formatCNPJ, formatDate, formatPct } from "@/lib/format";
@@ -9,7 +10,7 @@ import { montarAuditoriaCBS, notasAuditoriaCBS, type AuditoriaCBS } from "@/lib/
 
 
 
-type RegimeKey = "SIMPLES" | "HIBRIDO" | "LP" | "LR" | "LP_2026" | "LP_2027" | "LR_2026" | "LR_2027";
+type RegimeKey = "SIMPLES" | "SIMPLES_2027" | "HIBRIDO" | "LP" | "LR" | "LP_2026" | "LP_2027" | "LR_2026" | "LR_2027";
 type Cenario = {
   regime: RegimeKey;
   ano?: 2026 | 2027;
@@ -52,7 +53,8 @@ type Analise = {
 
 const REGIME_LABEL: Record<RegimeKey, string> = {
   SIMPLES: "Simples Nacional",
-  HIBRIDO: "Simples Híbrido",
+  SIMPLES_2027: "Simples unificado 2027",
+  HIBRIDO: "Simples + regime regular IBS/CBS",
   LP: "Lucro Presumido",
   LR: "Lucro Real",
   LP_2026: "Lucro Presumido 2026",
@@ -129,7 +131,7 @@ function gerarDiagnostico(cliente: Cliente, analise: Analise, r: Resultados): Di
     atencao.push(`Regime atual (${cliente.regime_atual}) difere da recomendação — avaliar transição no início do próximo ano-calendário.`);
   }
   if (rec.regime === "HIBRIDO") {
-    atencao.push("Janela única de opção pelo Simples Híbrido: 01 a 30/setembro/2026. Perder o prazo trava o regime por 12 meses.");
+    atencao.push("Janela de cancelamento das opções: 03/11 a 20/12/2026 — irretratável para jan a jun/2027. Próxima opção: março/2027, para o 2º semestre.");
   }
   if (pctB2B < 30 && (isLR(rec.regime) || isLP(rec.regime))) {
     atencao.push(`Baixo percentual B2B (${pctB2B}%) limita o repasse do IVA dual — monitorar mix de receita.`);
@@ -151,7 +153,7 @@ function gerarDiagnostico(cliente: Cliente, analise: Analise, r: Resultados): Di
   if (rec.carga_pct > 0.2) fracos.push(`Carga tributária acima de 20% da receita (${formatPct(rec.carga_pct)}) — comprometendo competitividade.`);
 
   // Sugestões
-  if (rec.regime === "HIBRIDO") sugestoes.push("Formalizar a opção pelo Simples Híbrido entre 01 e 30/09/2026 junto à Receita Federal.");
+  if (rec.regime === "HIBRIDO") sugestoes.push("Manter a opção pelo regime regular de IBS/CBS (não cancelar até 20/12/2026) e confirmar o repasse de preço com clientes PJ.");
   else if (isLR(rec.regime)) sugestoes.push("Estruturar controle de créditos sobre compras e insumos (PIS/Cofins até 2026, CBS a partir de 2027) — principal vetor de redução da carga no Lucro Real.");
   else sugestoes.push(`Manter o regime ${label(rec.regime)} e revisar a carga após a publicação das alíquotas definitivas do Comitê Gestor IBS.`);
   sugestoes.push("Adequar o ERP/emissor de NF para destaque correto de CBS/IBS a partir de 2026 (alíquota teste) e 2027 (vigência plena).");
@@ -451,7 +453,7 @@ export async function gerarDiagnosticoPDF(params: {
     conferido_por?: string | null;
   };
   // Alíquota BASE parametrizada (não a efetiva média por linha de receita).
-  const aliqUsada = Number((r as unknown as { cbs_aliquota_base?: number })?.cbs_aliquota_base ?? 0.088);
+  const aliqUsada = Number((r as unknown as { cbs_aliquota_base?: number })?.cbs_aliquota_base ?? CBS_2027_PADRAO);
   doc.setFontSize(8);
   setColor(doc, GOLD);
   doc.text(
@@ -574,7 +576,7 @@ export async function gerarDiagnosticoPDF(params: {
     RODAPE_CBS,
     "Este diagnóstico é baseado nos documentos fornecidos pela empresa (DRE, Balanço, Folha, Fornecedores e Saídas) e nas alíquotas de referência da Lei Complementar 214/2025, resolvidas por linha de receita conforme o enquadramento setorial de cada atividade.",
     "As alíquotas definitivas do IBS serão fixadas pelo Comitê Gestor IBS após deliberação do Senado Federal e podem sofrer ajustes. As tabelas do Simples Nacional consideradas são as vigentes na data de emissão.",
-    "A janela de opção pelo Simples Híbrido ocorre exclusivamente entre 01 e 30 de setembro de 2026. Empresas que não optarem permanecerão no regime atual por 12 meses.",
+    "A opção pelo regime regular de IBS/CBS para jan a jun/2027 encerrou em 30/10/2026; o cancelamento pode ser feito de 03/11 a 20/12/2026 e é irretratável (Res. CGSN 194/2026). A próxima opção é em março/2027, para o 2º semestre.",
     "Os valores apresentados são estimativas técnicas e não substituem o assessoramento contábil personalizado. Recomenda-se revisão trimestral à medida que novas normas forem publicadas.",
     "Documento confidencial — uso exclusivo do destinatário identificado na capa.",
   ];

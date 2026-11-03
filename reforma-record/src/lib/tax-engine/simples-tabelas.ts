@@ -55,7 +55,15 @@ type Linha = [aliquota: number, parcela: number, p: Partial<PartilhaBase>];
 function montar(linhas: Linha[]): FaixaSimples[] {
   return linhas.map(([aliquota, parcela, p], idx) => {
     const partilha: PartilhaBase = {
-      irpj: 0, csll: 0, cofins: 0, pis: 0, cpp: 0, ipi: 0, icms: 0, iss: 0, ...p,
+      irpj: 0,
+      csll: 0,
+      cofins: 0,
+      pis: 0,
+      cpp: 0,
+      ipi: 0,
+      icms: 0,
+      iss: 0,
+      ...p,
     };
     return {
       faixa: (idx + 1) as FaixaSimples["faixa"],
@@ -87,10 +95,26 @@ export const TABELA_SIMPLES: Record<Anexo, FaixaSimples[]> = {
   // Anexo II — Indústria
   ANEXO_II: montar([
     [0.045, 0, { irpj: 5.5, csll: 3.5, cofins: 11.51, pis: 2.49, cpp: 37.5, ipi: 7.5, icms: 32 }],
-    [0.078, 5_940, { irpj: 5.5, csll: 3.5, cofins: 11.51, pis: 2.49, cpp: 37.5, ipi: 7.5, icms: 32 }],
-    [0.1, 13_860, { irpj: 5.5, csll: 3.5, cofins: 11.51, pis: 2.49, cpp: 37.5, ipi: 7.5, icms: 32 }],
-    [0.112, 22_500, { irpj: 5.5, csll: 3.5, cofins: 11.51, pis: 2.49, cpp: 37.5, ipi: 7.5, icms: 32 }],
-    [0.147, 85_500, { irpj: 5.5, csll: 3.5, cofins: 11.51, pis: 2.49, cpp: 37.5, ipi: 7.5, icms: 32 }],
+    [
+      0.078,
+      5_940,
+      { irpj: 5.5, csll: 3.5, cofins: 11.51, pis: 2.49, cpp: 37.5, ipi: 7.5, icms: 32 },
+    ],
+    [
+      0.1,
+      13_860,
+      { irpj: 5.5, csll: 3.5, cofins: 11.51, pis: 2.49, cpp: 37.5, ipi: 7.5, icms: 32 },
+    ],
+    [
+      0.112,
+      22_500,
+      { irpj: 5.5, csll: 3.5, cofins: 11.51, pis: 2.49, cpp: 37.5, ipi: 7.5, icms: 32 },
+    ],
+    [
+      0.147,
+      85_500,
+      { irpj: 5.5, csll: 3.5, cofins: 11.51, pis: 2.49, cpp: 37.5, ipi: 7.5, icms: 32 },
+    ],
     [0.3, 720_000, { irpj: 8.5, csll: 7.5, cofins: 20.96, pis: 4.54, cpp: 23.5, ipi: 35 }],
   ]),
   // Anexo III — Serviços (Fator R ≥ 28%)
@@ -163,7 +187,10 @@ export function divisaoCbsIbs2027(pisMaisCofins: number): { cbs: number; ibs: nu
 }
 
 /** Teto de 5% do ISS: excedente redistribuído proporcionalmente aos demais tributos. */
-function aplicarTetoISS(p: Omit<Partilha, "teto_iss_aplicado" | "periodo" | "pendente_texto_oficial">, aliqEfetiva: number) {
+function aplicarTetoISS(
+  p: Omit<Partilha, "teto_iss_aplicado" | "periodo" | "pendente_texto_oficial">,
+  aliqEfetiva: number,
+) {
   if (p.iss <= 0 || aliqEfetiva <= 0 || aliqEfetiva * p.iss <= 0.05) return { p, aplicado: false };
   const novoIss = 0.05 / aliqEfetiva;
   const escala = (1 - novoIss) / (1 - p.iss);
@@ -190,7 +217,12 @@ function aplicarTetoISS(p: Omit<Partilha, "teto_iss_aplicado" | "periodo" | "pen
  * - 2027 e 2028: CBS + IBS no lugar de PIS + Cofins.
  * - 2029+: a tabela oficial ainda não foi carregada — usa 2027–2028 e marca como pendente.
  */
-export function partilhaSimples(anexo: Anexo, faixa: FaixaSimples, ano: number, aliqEfetiva: number): Partilha {
+export function partilhaSimples(
+  anexo: Anexo,
+  faixa: FaixaSimples,
+  ano: number,
+  aliqEfetiva: number,
+): Partilha {
   const b = faixa.partilha;
   const base =
     ano <= 2026
@@ -229,11 +261,21 @@ export function linhasPartilha2027(): Array<{
   faixa: number;
   aliquota_nominal: number;
   parcela_deduzir: number;
-  p_irpj: number; p_csll: number; p_cbs: number; p_ibs: number;
-  p_cpp: number; p_ipi: number; p_icms: number; p_iss: number;
+  p_irpj: number;
+  p_csll: number;
+  p_cbs: number;
+  p_ibs: number;
+  p_cpp: number;
+  p_ipi: number;
+  p_icms: number;
+  p_iss: number;
 }> {
   const nomes: Record<Anexo, "I" | "II" | "III" | "IV" | "V"> = {
-    ANEXO_I: "I", ANEXO_II: "II", ANEXO_III: "III", ANEXO_IV: "IV", ANEXO_V: "V",
+    ANEXO_I: "I",
+    ANEXO_II: "II",
+    ANEXO_III: "III",
+    ANEXO_IV: "IV",
+    ANEXO_V: "V",
   };
   return (Object.keys(TABELA_SIMPLES) as Anexo[]).flatMap((a) =>
     TABELA_SIMPLES[a].map((f) => {

@@ -55,7 +55,7 @@ function LoginPage() {
           <p className="label-uppercase text-gold/90">Diagnóstico Tributário</p>
           <h1 className="font-display text-5xl leading-[1.05] mt-3">
             A Reforma chega em <span className="text-gold">2027</span>.<br />
-            Seu cliente decide até <span className="text-gold">30/09/2026</span>.
+            Seu cliente decide até <span className="text-gold">20/12/2026</span>.
           </h1>
           <p className="text-white/70 mt-6 text-base leading-relaxed">
             Estudos comparativos de Simples Tradicional, Híbrido, Lucro Presumido e Lucro Real —

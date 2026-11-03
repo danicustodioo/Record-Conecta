@@ -61,7 +61,7 @@ function DashboardPage() {
             Bom trabalho, <span className="text-gold">{user?.email?.split("@")[0]}</span>
           </h1>
           <p className="text-muted-foreground mt-2 text-sm">
-            Cada cliente cadastrado merece um diagnóstico antes de 30/09/2026.
+            Cada cliente do Simples merece um diagnóstico antes do fim da janela de cancelamento, em 20/12/2026.
           </p>
         </div>
         <Link to="/clientes/novo">

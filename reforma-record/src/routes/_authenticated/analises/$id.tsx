@@ -18,6 +18,7 @@ import { gerarDiagnosticoPDF } from "@/lib/diagnostico-pdf";
 import { toast } from "sonner";
 import { extrairDocumento } from "@/lib/extracao.functions";
 import { calcularTodos, type InputCalculo } from "@/lib/tax-engine";
+import { useJanelasOpcao, useParametrosReforma, usePerfilClientes } from "@/hooks/useBloco15A";
 import {
   SegregacaoReceita,
   useReceitasLinhas,
@@ -166,6 +167,12 @@ function WizardPage() {
   // Bloco 14: enquadramento setorial
   const { data: regimesSetoriais } = useRegimesSetoriais();
   const { data: linhasReceita = [] } = useReceitasLinhas(id);
+  // Bloco 15A: parâmetros 2027, janelas de opção e perfil de clientes
+  const { data: parametrosReforma } = useParametrosReforma();
+  const { data: janelasOpcao } = useJanelasOpcao();
+  const { data: perfilClientes = [] } = usePerfilClientes(
+    (analise as { cliente_id?: string } | undefined)?.cliente_id,
+  );
 
   // Bloco 14A: trava de conferência da central de documentos
   const clienteIdAtual = (analise as { cliente_id?: string } | undefined)?.cliente_id;
@@ -380,6 +387,13 @@ function WizardPage() {
         pct_empreitada?: number | null;
         pct_creditavel?: number | null;
         base_creditavel_estimada?: number | null;
+        regime_atual?: string | null;
+        // Bloco 15A
+        optou_regime_regular?: boolean | null;
+        repasse_preco_confirmado?: boolean | null;
+        pct_receita_iss_retido?: number | null;
+        sujeito_fator_r?: boolean | null;
+        folha_12m?: number | null;
       };
 
       // ---- Anualização da DRE ----
@@ -432,14 +446,19 @@ function WizardPage() {
           nome: f.nome,
           regime,
           compras_anuais: f.valor_anual ?? f.valor_contabil_total ?? 0,
+          cnpj: f.cnpj ?? null,
           cnae: meta.cnae ?? null,
           tipo_receita: meta.tipo_receita_fornecedor ?? tipoReceitaPorCnae(meta.cnae),
         };
       });
 
-      const anexo = cli.subsetor?.toUpperCase().includes("ANEXO")
-        ? (cli.subsetor.toUpperCase().replace(/\s/g, "_") as InputCalculo["anexo"])
-        : "ANEXO_III";
+      // Bloco 15A: anexo vem do regime atual (SIMPLES_III → ANEXO_III); o Fator R pode trocar III ↔ V.
+      const regimeAnexo = (cli.regime_atual ?? "").toUpperCase().match(/^SIMPLES_(I{1,3}|IV|V)$/)?.[1];
+      const anexo: InputCalculo["anexo"] = regimeAnexo
+        ? (`ANEXO_${regimeAnexo}` as InputCalculo["anexo"])
+        : cli.subsetor?.toUpperCase().includes("ANEXO")
+          ? (cli.subsetor.toUpperCase().replace(/\s/g, "_") as InputCalculo["anexo"])
+          : "ANEXO_III";
       const receitaLiquidaAnual = Math.max(0, receitaAnual - n("simples_nacional_pago"));
       const linhasReceitaCalculo = linhasReceita.map((l) => ({
         ...l,
@@ -458,7 +477,8 @@ function WizardPage() {
       const input: InputCalculo = {
         setor: cli.setor,
         anexo,
-        rbt12: Number(cli.rbt12 ?? 0) || receitaAnual,
+        // Bloco 15A: sem RBT12 no cadastro, o motor usa a DRE anualizada e avisa no diagnóstico.
+        rbt12: Number(cli.rbt12 ?? 0),
         receita_anual: receitaAnual,
         receita_liquida_anual: receitaLiquidaAnual,
         receita_servicos: n("receita_servicos"),
@@ -508,6 +528,16 @@ function WizardPage() {
         regime_atual: (cli as { regime_atual?: string | null }).regime_atual ?? null,
         tem_patrimonio_afetacao:
           (cli as { tem_patrimonio_afetacao?: boolean | null }).tem_patrimonio_afetacao ?? null,
+        // ---- Bloco 15A ----
+        parametros: parametrosReforma,
+        janelas: janelasOpcao,
+        folha_12m: cli.folha_12m != null && Number(cli.folha_12m) > 0 ? Number(cli.folha_12m) : undefined,
+        sujeito_fator_r: cli.sujeito_fator_r ?? null,
+        pct_receita_iss_retido:
+          cli.pct_receita_iss_retido != null ? Number(cli.pct_receita_iss_retido) : undefined,
+        perfil_clientes: perfilClientes.map((p) => ({ categoria: p.categoria, percentual: p.percentual_receita })),
+        optou_regime_regular: cli.optou_regime_regular ?? null,
+        repasse_preco_confirmado: cli.repasse_preco_confirmado ?? null,
       };
       const resultado = calcularTodos(input);
       await supabase.from("analises").update({

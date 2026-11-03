@@ -1,6 +1,7 @@
 // Gera a apresentação (.pptx) do diagnóstico: capa, sumário executivo, comparativo de
 // regimes, gráficos capturados do dashboard e a auditoria do cálculo de CBS 2027.
 import pptxgen from "pptxgenjs";
+import { CBS_2027_PADRAO } from "@/lib/tax-engine/parametros";
 import { toPng } from "html-to-image";
 import { formatBRL, formatCNPJ, formatDate, formatPct } from "@/lib/format";
 import { RODAPE_CBS } from "@/lib/enquadramento";
@@ -56,7 +57,8 @@ type Analise = {
 
 const REGIME_LABEL: Record<string, string> = {
   SIMPLES: "Simples Nacional",
-  HIBRIDO: "Simples Híbrido",
+  SIMPLES_2027: "Simples unificado 2027",
+  HIBRIDO: "Simples + regime regular IBS/CBS",
   LP: "Lucro Presumido",
   LR: "Lucro Real",
   LP_2026: "Lucro Presumido 2026",
@@ -244,7 +246,7 @@ export async function gerarDiagnosticoPPTX(params: {
     [
       `CNPJ ${formatCNPJ(cliente.cnpj)} · ${cliente.setor}${cliente.subsetor ? " · " + cliente.subsetor : ""}`,
       `Regime atual: ${cliente.regime_atual}  ·  Receita bruta anualizada: ${formatBRL(receita)}`,
-      `Emissão: ${formatDate(new Date().toISOString())}  ·  Engine ${analise.versao_engine ?? "v14"}  ·  Alíquota base CBS ${(Number(r?.cbs_aliquota_base ?? 0.088) * 100).toFixed(3)}%`,
+      `Emissão: ${formatDate(new Date().toISOString())}  ·  Engine ${analise.versao_engine ?? "v15"}  ·  Alíquota base CBS ${(Number(r?.cbs_aliquota_base ?? CBS_2027_PADRAO) * 100).toFixed(3)}%`,
     ].join("\n"),
     { x: 0.9, y: 4.9, w: 11, h: 1.2, fontSize: 12, color: "C8C8C8", lineSpacingMultiple: 1.3 },
   );

@@ -36,7 +36,14 @@ const jMorais: InputCalculo = {
   folha_12m: 130_000,
   pct_receita_iss_retido: 11_819.1 / RECEITA,
   pct_b2b: 100,
-  fornecedores: [{ nome: "Fornecedores (regime Normal)", regime: "NORMAL", compras_anuais: 1_822.8, cnpj: "00.000.000/0001-00" }],
+  fornecedores: [
+    {
+      nome: "Fornecedores (regime Normal)",
+      regime: "NORMAL",
+      compras_anuais: 1_822.8,
+      cnpj: "00.000.000/0001-00",
+    },
+  ],
   linhas_receita: [{ tipo_receita: "saude_anexo_iii", valor_anualizado: RECEITA }],
   perfil_clientes: [{ categoria: "pj_regime_regular", percentual: 1 }],
   regime_atual: "SIMPLES_III",
@@ -44,7 +51,10 @@ const jMorais: InputCalculo = {
 };
 
 const perto = (real: number, esperado: number, tol: number, msg: string) =>
-  assert.ok(Math.abs(real - esperado) <= tol, `${msg}: obtido ${real}, esperado ${esperado} ± ${tol}`);
+  assert.ok(
+    Math.abs(real - esperado) <= tol,
+    `${msg}: obtido ${real}, esperado ${esperado} ± ${tol}`,
+  );
 
 test("parâmetros 2027 derivados: CBS 11,20%, IBS 0,10%", () => {
   const a = aliquotas2027(PARAMETROS_PADRAO);
@@ -69,7 +79,8 @@ test("3 — partilha CBS+IBS do Anexo III, 2ª faixa, 2027–2028 = 17,10%", () 
 
 test("tabelas: toda faixa soma 100% e confere os valores conhecidos de 2027–2028", () => {
   for (const [anexo, faixas] of Object.entries(TABELA_SIMPLES)) {
-    for (const f of faixas) assert.equal(somaPartilha(f.partilha), 100, `${anexo} faixa ${f.faixa}`);
+    for (const f of faixas)
+      assert.equal(somaPartilha(f.partilha), 100, `${anexo} faixa ${f.faixa}`);
   }
   const conhecidos: Array<[keyof typeof TABELA_SIMPLES, number, number, number]> = [
     ["ANEXO_I", 1, 15.33, 0.17],
@@ -110,7 +121,9 @@ test("4 — cenário A: carga atual R$ 2.528,78", () => {
 test("5 — cenário B: Simples unificado 2027 ≈ cenário A (variação < 1%)", () => {
   const A = calcSimples(jMorais);
   const B = calcSimples2027(jMorais);
-  const varia = Math.abs(B.detalhamento.das_a_recolher - A.detalhamento.das_a_recolher) / A.detalhamento.das_a_recolher;
+  const varia =
+    Math.abs(B.detalhamento.das_a_recolher - A.detalhamento.das_a_recolher) /
+    A.detalhamento.das_a_recolher;
   assert.ok(varia < 0.01, `variação de ${varia}`);
 });
 
@@ -138,9 +151,10 @@ test("8, 9 e 10 — crédito transferido e reajuste de equilíbrio", () => {
 test("11 — recomendação: manter o Simples unificado, salvo repasse confirmado", () => {
   const r = calcularTodos(jMorais);
   assert.equal(r.recomendado, "SIMPLES");
-  assert.ok(r.simples_decisao);
-  assert.equal(r.simples_decisao.recomenda_regime_regular, false);
-  assert.match(r.simples_decisao.recomendacao, /Manter o Simples unificado/);
+  const d = r.simples_decisao;
+  assert.ok(d);
+  assert.equal(d!.recomenda_regime_regular, false);
+  assert.match(d!.recomendacao, /Manter o Simples unificado/);
   assert.equal(r.versao_engine, "v15");
   assert.ok(r.janela_cancelamento_aberta, "03/11/2026 está dentro da janela de cancelamento");
 });
@@ -161,7 +175,13 @@ test("crédito de fornecedor do Simples segue art. 47, §9º, II", () => {
   const base: InputCalculo = {
     ...jMorais,
     fornecedores: [
-      { regime: "SIMPLES_SEM_HIBRIDO", anexo: "ANEXO_I", faixa: 1, compras_anuais: 10_000, cnpj: "x" },
+      {
+        regime: "SIMPLES_SEM_HIBRIDO",
+        anexo: "ANEXO_I",
+        faixa: 1,
+        compras_anuais: 10_000,
+        cnpj: "x",
+      },
     ],
   };
   const C = calcHibrido(base);

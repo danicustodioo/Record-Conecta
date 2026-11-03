@@ -37,6 +37,10 @@ export function aliquotas2027(p: ParametrosReforma = PARAMETROS_PADRAO): Aliquot
   return { cbs, ibs, iva: cbs + ibs };
 }
 
+/** CBS e IBS de 2027 pelos parâmetros padrão — só para telas antigas sem resultado salvo. */
+export const CBS_2027_PADRAO = aliquotas2027(PARAMETROS_PADRAO).cbs;
+export const IBS_2027_PADRAO = aliquotas2027(PARAMETROS_PADRAO).ibs;
+
 const num = (v: unknown, fallback: number): number => {
   const n = Number(v);
   return v != null && v !== "" && Number.isFinite(n) && n >= 0 ? n : fallback;
@@ -61,7 +65,7 @@ export function normalizarParametros(row?: Record<string, unknown> | null): Para
 const pct = (v: number, casas = 2) =>
   `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;
 
-/** Rodapé legal das páginas de cálculo (substitui o texto fixo de 8,8%). */
+/** Rodapé legal das páginas de cálculo (gerado dos parâmetros vigentes). */
 export function rodapeAliquota(p: ParametrosReforma = PARAMETROS_PADRAO): string {
   const a = aliquotas2027(p);
   const pendente = p.status_aliquota !== "fixada_senado";

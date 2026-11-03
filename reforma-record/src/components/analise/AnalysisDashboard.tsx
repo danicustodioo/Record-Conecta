@@ -2,6 +2,7 @@
 // Renderiza todas as seções 1-8 quando `resultados_calculo` está preenchido.
 
 import { motion } from "framer-motion";
+import { CBS_2027_PADRAO, IBS_2027_PADRAO, rodapeAliquota } from "@/lib/tax-engine/parametros";
 import { resumirFolha } from "@/lib/folha-normalize";
 
 import {
@@ -26,9 +27,11 @@ import { CheckCircle2, AlertTriangle, Clock } from "lucide-react";
 import { DiagnosticoIACard } from "./DiagnosticoIACard";
 import type { DiagnosticoIA } from "@/lib/diagnostico-ia.functions";
 import { RODAPE_CBS } from "@/lib/enquadramento";
+import { DecisaoSimplesCard, FatorRCard, type DecisaoSimplesView, type FatorRView } from "./DecisaoSimplesCard";
+import type { ParametrosReforma } from "@/lib/tax-engine/parametros";
 
 
-type RegimeKey = "SIMPLES" | "HIBRIDO" | "LP" | "LR" | "LP_2026" | "LP_2027" | "LR_2026" | "LR_2027";
+type RegimeKey = "SIMPLES" | "SIMPLES_2027" | "HIBRIDO" | "LP" | "LR" | "LP_2026" | "LP_2027" | "LR_2026" | "LR_2027";
 type Cenario = {
   regime: RegimeKey;
   ano?: 2026 | 2027;
@@ -76,6 +79,13 @@ type Resultados = {
   versao_engine?: string;
   data_base_calculo?: string;
   saldo_credor_cbs?: number;
+  // Bloco 15A
+  parametros_reforma?: ParametrosReforma;
+  simples_decisao?: DecisaoSimplesView;
+  fator_r?: FatorRView;
+  anexo_utilizado?: string;
+  rbt12_utilizada?: number;
+  rbt12_fonte?: "CADASTRO" | "DRE_ANUALIZADA";
 };
 
 type Cliente = {
@@ -109,7 +119,8 @@ type Analise = {
 
 const REGIME_LABEL: Record<RegimeKey, string> = {
   SIMPLES: "Simples Nacional",
-  HIBRIDO: "Simples Híbrido",
+  SIMPLES_2027: "Simples unificado 2027",
+  HIBRIDO: "Simples + regime regular IBS/CBS",
   LP: "Lucro Presumido",
   LR: "Lucro Real",
   LP_2026: "Lucro Presumido 2026",
@@ -119,6 +130,7 @@ const REGIME_LABEL: Record<RegimeKey, string> = {
 };
 const REGIME_COLOR: Record<RegimeKey, string> = {
   SIMPLES: "#1E6E4A",
+  SIMPLES_2027: "#2F8F63",
   HIBRIDO: "#BA7517",
   LP: "#993C1D",
   LR: "#185FA5",
@@ -129,8 +141,9 @@ const REGIME_COLOR: Record<RegimeKey, string> = {
 };
 const label = (r: RegimeKey) => REGIME_LABEL[r] ?? String(r);
 
+// Bloco 15A: fim da janela de cancelamento das opções (Res. CGSN 194/2026).
 function diasAteOpcao(): number {
-  const alvo = new Date("2026-09-30T23:59:59-03:00").getTime();
+  const alvo = new Date("2026-12-20T23:59:59-03:00").getTime();
   const diff = alvo - Date.now();
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
@@ -199,9 +212,9 @@ export function AnalysisDashboard({
             <span className="block uppercase tracking-widest text-gold/70">Alíquota CBS utilizada</span>
             <strong className="text-white">
               {formatPct(
-                Number(analise.aliquota_cbs_utilizada ?? r.cbs_aliquota_media_efetiva ?? 0.088),
+                Number(analise.aliquota_cbs_utilizada ?? r.cbs_aliquota_media_efetiva ?? CBS_2027_PADRAO),
               )}{" "}
-              <span className="text-white/50">(base {formatPct(r.cbs_aliquota_base ?? 0.088)})</span>
+              <span className="text-white/50">(base {formatPct(r.cbs_aliquota_base ?? CBS_2027_PADRAO)})</span>
             </strong>
           </div>
           <div>
@@ -247,13 +260,25 @@ export function AnalysisDashboard({
         <TabelaComparativa cenarios={elegiveis} recomendado={recomendado.regime} pior={pior.regime} receita={receita} />
       </div>
 
+      {/* Bloco 15A — Fator R e decisão do Simples em 2027 (adição) */}
+      {r.fator_r && (
+        <div data-export-title="Fator R e anexo do Simples">
+          <FatorRCard fator={r.fator_r} anexoCadastro={r.premissas?.anexo as string | undefined} />
+        </div>
+      )}
+      {r.simples_decisao && (
+        <div data-export-title="Simples em 2027 — crédito transferido e preço de equilíbrio">
+          <DecisaoSimplesCard d={r.simples_decisao} />
+        </div>
+      )}
+
       {/* SEÇÃO 3A.2 — Composição da CBS por linha de receita (Bloco 14) */}
       {r.cbs_detalhe && r.cbs_detalhe.length > 0 && (
         <div data-export-title="Composição da CBS por linha de receita">
           <ComposicaoCBS
             linhas={r.cbs_detalhe}
-            aliquotaBase={r.cbs_aliquota_base ?? 0.088}
-            aliquotaMedia={r.cbs_aliquota_media_efetiva ?? 0.088}
+            aliquotaBase={r.cbs_aliquota_base ?? CBS_2027_PADRAO}
+            aliquotaMedia={r.cbs_aliquota_media_efetiva ?? CBS_2027_PADRAO}
             saldoCredor={Number(analise.saldo_credor_cbs ?? r.saldo_credor_cbs ?? 0)}
           />
         </div>
@@ -328,7 +353,7 @@ export function AnalysisDashboard({
 
       {/* SEÇÃO 8 — Aviso legal */}
       <Card className="p-5 bg-muted/40 text-xs text-muted-foreground" data-export-title="Aviso legal">
-        <p>{RODAPE_CBS}</p>
+        <p>{r.parametros_reforma ? rodapeAliquota(r.parametros_reforma) : RODAPE_CBS}</p>
         <p className="mt-2">
           <strong>Aviso Legal:</strong> Os valores são estimativas baseadas nas alíquotas de referência da
           LC 214/2025 (IBS: 17,7%) e nas tabelas do Simples Nacional vigentes. Alíquotas
@@ -472,7 +497,7 @@ function PrazoBanner({ status }: { status: string }) {
       <div className="bg-navy text-white p-3 rounded-md flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2 text-sm">
           <Clock className="h-4 w-4 text-gold" />
-          <span>Prazo de opção pelo <strong>Simples Híbrido</strong>: 1° a 30/setembro/2026</span>
+          <span>Janela de <strong>cancelamento das opções</strong> (regime regular de IBS/CBS): 03/11 a 20/12/2026 — irretratável para jan a jun/2027</span>
         </div>
         <span className="text-gold font-display text-lg">{dias} dias restantes</span>
       </div>
@@ -573,7 +598,7 @@ function Veredito({
           <p className="text-xs uppercase text-white/60">Prazo de ação</p>
           <p className="text-sm text-white mt-1">
             {recomendado.regime === "HIBRIDO"
-              ? "Opção até 30/setembro/2026"
+              ? "Manter a opção pelo regime regular — cancelamento possível só até 20/12/2026"
               : cliente.regime_atual?.toUpperCase().includes(isLR(recomendado.regime) ? "REAL" : "PRESUMIDO")
                 ? "Mantém regime atual — foco em créditos e compliance da CBS"
                 : "Migração de regime: formalizar no início do ano-calendário"}
@@ -594,8 +619,8 @@ function gerarArgumentosFallback(rec: Cenario, pior: Cenario, cli: Cliente, rece
     arg.push("CPP embutido no DAS — sem custo patronal adicional sobre folha (exceto Anexo IV).");
     arg.push("Menor complexidade fiscal: guia única (DAS) com vencimento mensal.");
   } else if (rec.regime === "HIBRIDO") {
-    arg.push(`Crédito amplo de IBS/CBS para clientes B2B (${cli.pct_b2b ?? 0}% da receita).`);
-    arg.push("Simples reduzido + IVA dual fora do DAS, alinhado à reforma tributária.");
+    arg.push(`Cliente PJ do regime regular passa a se creditar da alíquota cheia de IBS/CBS (${cli.pct_b2b ?? 0}% da receita em B2B).`);
+    arg.push("DAS reduzido (sem CBS e IBS) + IBS/CBS apurados no regime regular, com crédito sobre compras (LC 214/2025, art. 41, §3º).");
   } else if (isLR(rec.regime)) {
     const lair = rec.detalhamento.lair ?? 0;
     arg.push(
@@ -691,7 +716,7 @@ function TabelaComparativa({
         </table>
       </div>
       <div className="px-6 py-3 text-[10px] text-muted-foreground border-t bg-off-white/50 space-y-0.5">
-        <p>¹ PIS e Cofins são extintos pela LC 214/2025 a partir de jan/2027 — substituídos pela CBS (8,8%).</p>
+        <p>¹ PIS e Cofins são extintos pela LC 214/2025 a partir de jan/2027 — substituídos pela CBS ({formatPct(CBS_2027_PADRAO)} em 2027).</p>
         <p>² No Simples Nacional (exceto Anexo IV), CPP e ISS estão embutidos no DAS.</p>
         <p>³ IBS permanece em fase de teste (0,1%) em 2027 e não foi somado à carga.</p>
       </div>
@@ -740,6 +765,9 @@ function ComposicaoDonut({ cenario }: { cenario: Cenario }) {
     "adicional", "cumulativo",
     // Saldo credor é crédito a compensar, não parcela da carga paga.
     "saldo_credor", "saldo",
+    // Bloco 15A: referências e totais que não são parcelas da carga.
+    "faixa", "rbt12", "p_cbs", "p_ibs", "credito_transferido", "iss_ou_ipi",
+    "das_anual", "das_a_recolher", "das_cheio", "das_reduzido_a_recolher", "iss_retido", "iva_a_pagar",
   ];
   const fatias = Object.entries(cenario.detalhamento)
     .filter(([k, v]) => typeof v === "number" && v > 0 && !IGNORAR.some((t) => k.includes(t)))
@@ -1002,7 +1030,7 @@ function Projecao({ cenarios }: { cenarios: Cenario[] }) {
 function PlanoAcao({ recomendado, cliente }: { recomendado: RegimeKey; cliente: Cliente }) {
   const acoes: Array<{ acao: string; prazo: string; resp: string; prio: "URGENTE" | "ALTA" | "MÉDIA" }> = [];
   if (recomendado === "HIBRIDO") {
-    acoes.push({ acao: "Formalizar opção pelo Simples Híbrido junto à Receita Federal", prazo: "30/09/2026", resp: "Record + Cliente", prio: "URGENTE" });
+    acoes.push({ acao: "Manter a opção pelo regime regular de IBS/CBS e renegociar preços com clientes PJ", prazo: "20/12/2026", resp: "Record + Cliente", prio: "URGENTE" });
   } else if (isLR(recomendado)) {
     acoes.push({ acao: "Confirmar apuração pelo Lucro Real e estruturar controle de créditos sobre compras e insumos", prazo: "Jan/2027", resp: "Record", prio: "ALTA" });
     acoes.push({ acao: "Formalizar aproveitamento e controle de prejuízo fiscal acumulado (compensação futura)", prazo: "Contínuo", resp: "Record", prio: "ALTA" });
@@ -1071,7 +1099,7 @@ function ResumoExecutivo({
   const salarios = Math.round(economia / SALARIO_MINIMO_2026);
   const acaoImediata =
     recomendado.regime === "HIBRIDO"
-      ? "Formalizar a opção pelo Simples Híbrido até 30/setembro/2026 junto à Receita Federal — perder esse prazo significa permanecer no regime atual por mais um ano-calendário inteiro."
+      ? "Confirmar a opção pelo regime regular de IBS/CBS e não cancelá-la até 20/12/2026; a próxima janela de opção é março/2027, para o 2º semestre."
       : isLR(recomendado.regime)
         ? "Estruturar o controle de créditos sobre compras e insumos (PIS/Cofins até 2026, CBS a partir de 2027), que é o principal vetor de redução da carga no Lucro Real."
         : `Manter o ${label(recomendado.regime)} e adequar a emissão fiscal até dezembro/2026 para destacar CBS/IBS conforme calendário oficial da reforma.`;
@@ -1086,7 +1114,7 @@ function ResumoExecutivo({
       <div className="space-y-4 text-sm leading-relaxed text-foreground/90">
         <p>
           <strong className="text-navy">O que muda. </strong>
-          A LC 214/2025 substitui PIS, Cofins, ICMS e ISS por <strong>CBS (8,8%)</strong> e <strong>IBS (17,7%)</strong> entre 2026 e 2033, alterando profundamente a carga de tributos indiretos da {cliente.razao_social}. Com receita bruta anualizada de <strong className="num-display">{formatBRL(receita)}</strong>, {cliente.pct_b2b ?? 0}% da receita em B2B e setor {cliente.setor}, o perfil da empresa exige reposicionamento fiscal. {restricao}
+          A LC 214/2025 substitui PIS, Cofins, ICMS e ISS por <strong>CBS</strong> e <strong>IBS</strong> entre 2026 e 2033 (em 2027: CBS de {formatPct(CBS_2027_PADRAO)} e IBS de {formatPct(IBS_2027_PADRAO)}), alterando profundamente a carga de tributos indiretos da {cliente.razao_social}. Com receita bruta anualizada de <strong className="num-display">{formatBRL(receita)}</strong>, {cliente.pct_b2b ?? 0}% da receita em B2B e setor {cliente.setor}, o perfil da empresa exige reposicionamento fiscal. {restricao}
         </p>
         <p>
           <strong className="text-navy">Por que {label(recomendado.regime)} vence. </strong>
@@ -1197,14 +1225,14 @@ function LinhaTempoReforma({ recomendado, cliente }: { recomendado: string; clie
       prio: "ALTA",
     },
     {
-      data: "Set/2026",
+      data: "Nov–Dez/2026",
       ano: 2026,
-      titulo: recomendado === "HIBRIDO" ? "Janela de opção pelo Simples Híbrido" : "Reavaliação de regime",
+      titulo: "Janela de cancelamento das opções (03/11 a 20/12/2026)",
       descricao:
         recomendado === "HIBRIDO"
-          ? "Único período do ano para formalizar a opção pelo Simples Híbrido na Receita Federal."
-          : "Janela anual para mudança de regime tributário — confirmar permanência no regime recomendado.",
-      acao: recomendado === "HIBRIDO" ? "Protocolo eletrônico de opção até 30/09/2026." : "Documentar decisão de manutenção e arquivar.",
+          ? "A opção pelo regime regular de IBS/CBS vale para jan a jun/2027; o cancelamento é irretratável."
+          : "Quem optou pelo regime regular pode cancelar até 20/12/2026 — irretratável para jan a jun/2027.",
+      acao: recomendado === "HIBRIDO" ? "Não cancelar a opção; confirmar repasse de preço com clientes PJ." : "Se houve opção pelo regime regular, avaliar o cancelamento até 20/12/2026.",
       prio: "URGENTE",
     },
     {
@@ -1218,8 +1246,8 @@ function LinhaTempoReforma({ recomendado, cliente }: { recomendado: string; clie
     {
       data: "Jan/2027",
       ano: 2027,
-      titulo: "Extinção de PIS e Cofins · CBS plena (8,8%)",
-      descricao: "CBS passa a alíquota plena substituindo PIS/Cofins. IBS continua em teste a 0,1%.",
+      titulo: `Extinção de PIS e Cofins · CBS de ${(CBS_2027_PADRAO * 100).toFixed(1).replace(".", ",")}%`,
+      descricao: "CBS substitui PIS/Cofins (referência menos 0,1 p.p. em 2027–2028). IBS de 0,1% (0,05% estadual + 0,05% municipal).",
       acao: "Repassar/absorver impacto na precificação; revisar contratos B2B/B2C.",
       prio: "URGENTE",
     },

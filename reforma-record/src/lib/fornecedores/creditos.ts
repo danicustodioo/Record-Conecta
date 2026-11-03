@@ -2,10 +2,18 @@
 // Espelha a especificação Parte 4 do módulo de Fornecedores.
 
 import type { FornecedorClassificado } from "./classificador";
+import { aliquotas2027 } from "@/lib/tax-engine/parametros";
 
-export const CBS = 0.088;
-export const IBS = 0.177;
-export const IVA = 0.265;
+// Bloco 15A: alíquotas de 2027 derivadas dos parâmetros (CBS = referência − 0,1 p.p.; IBS 0,1%).
+const A27 = aliquotas2027();
+export const CBS = A27.cbs;
+export const IBS = A27.ibs;
+export const IVA = A27.iva;
+
+// Partilha de CBS e IBS no DAS de 2027–2028 quando o anexo do fornecedor é desconhecido:
+// 1ª faixa do Anexo I (15,33% CBS e 0,17% IBS). Marcado como estimativa.
+const P_CBS_SIMPLES_ESTIMADA = 0.1533;
+const P_IBS_SIMPLES_ESTIMADA = 0.0017;
 
 export type CenarioCredito = "LR_2027" | "HIBRIDO_2027" | "LP_2027" | "SIMPLES_2027";
 
@@ -54,9 +62,10 @@ export function calcularCreditoFornecedor(
       };
     }
     if (f.regime === "SIMPLES") {
+      // LC 214/2025, art. 47, §9º, II: crédito = compra × alíquota efetiva do DAS × (p_cbs + p_ibs).
       const aliq = f.aliquota_das_estimada ?? 0.10;
-      const taxa_cbs = aliq * 0.34;
-      const taxa_ibs = aliq * 0.25;
+      const taxa_cbs = aliq * P_CBS_SIMPLES_ESTIMADA;
+      const taxa_ibs = aliq * P_IBS_SIMPLES_ESTIMADA;
       const credito_cbs = compras * taxa_cbs;
       const credito_ibs = compras * taxa_ibs;
       const credito_total = credito_cbs + credito_ibs;
@@ -69,7 +78,7 @@ export function calcularCreditoFornecedor(
         taxa_efetiva: taxa_cbs + taxa_ibs,
         cor: "amarelo",
         credito_perdido,
-        descricao: `Crédito limitado — Simples sem Híbrido. Perde R$ ${credito_perdido.toFixed(0)}/ano vs. regime normal`,
+        descricao: `Crédito limitado (estimativa, art. 47, §9º, II) — Simples sem regime regular. Perde R$ ${credito_perdido.toFixed(0)}/ano vs. regime normal`,
       };
     }
     // DESCONHECIDO
@@ -96,15 +105,14 @@ export function calcularCreditoFornecedor(
     };
   }
 
-  // SIMPLES_2027
-  const cbs_das = compras * 0.035;
+  // SIMPLES_2027 — o optante do Simples unificado não toma crédito (LC 214/2025, art. 47, §9º, I)
   return {
-    credito_cbs: cbs_das,
+    credito_cbs: 0,
     credito_ibs: 0,
-    credito_total: cbs_das,
+    credito_total: 0,
     nivel: "MINIMO",
     cor: "cinza",
-    descricao: "Simples Tradicional: crédito mínimo embutido no DAS (~3,5%)",
+    descricao: "Simples unificado: a empresa optante não se credita de IBS/CBS nas compras (art. 47, §9º, I)",
   };
 }
 

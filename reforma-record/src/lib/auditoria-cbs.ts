@@ -2,6 +2,8 @@
 // (anualização, redução setorial, débito, crédito e saldo credor) para PDF e PPTX.
 // Fonte única de verdade, sem recalcular nada — apenas lê o resultado da engine.
 
+import { CBS_2027_PADRAO } from "@/lib/tax-engine/parametros";
+
 export type LinhaAuditoriaCBS = {
   tipo_receita: string;
   descricao: string;
@@ -60,7 +62,8 @@ type ResultadosLike = {
 const ROTULOS: Record<string, string> = {
   LP_2027: "Lucro Presumido 2027",
   LR_2027: "Lucro Real 2027",
-  HIBRIDO: "Simples Híbrido 2027",
+  SIMPLES_2027: "Simples unificado 2027",
+  HIBRIDO: "Simples + regime regular IBS/CBS",
   SIMPLES: "Simples Nacional 2027",
 };
 
@@ -126,9 +129,9 @@ export function montarAuditoriaCBS(params: {
     };
   });
 
-  // A alíquota BASE é única e parametrizada (parametros_calculo.aliquota_cbs).
+  // A alíquota BASE é única e parametrizada (parametros_reforma).
   // Nunca usar a média efetiva por linha (base × (1 − redução)) aqui.
-  const aliquotaBase = num(r.cbs_aliquota_base) || 0.088;
+  const aliquotaBase = num(r.cbs_aliquota_base) || CBS_2027_PADRAO;
 
 
   return {

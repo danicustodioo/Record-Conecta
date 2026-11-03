@@ -3,6 +3,7 @@
 // (plano pago com token). Guardado por cliente na tabela fornecedores_entradas.
 
 import { createServerFn } from "@tanstack/react-start";
+import { CBS_2027_PADRAO } from "@/lib/tax-engine/parametros";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { regimePorTipo, tipoReceitaPorCnae } from "@/lib/enquadramento";
@@ -32,11 +33,11 @@ async function getParametrosCBS(supabase: {
       .maybeSingle();
     const row = data as { aliquota_cbs?: number; credito_simples_estimado?: number } | null;
     return {
-      cbs: Number(row?.aliquota_cbs ?? 0.088),
+      cbs: Number(row?.aliquota_cbs ?? CBS_2027_PADRAO),
       simples: Number(row?.credito_simples_estimado ?? 0.032),
     };
   } catch {
-    return { cbs: 0.088, simples: 0.032 };
+    return { cbs: CBS_2027_PADRAO, simples: 0.032 };
   }
 }
 
