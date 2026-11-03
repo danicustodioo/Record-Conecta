@@ -4,7 +4,7 @@
 export const TETO_SIMPLES = 4_800_000;
 export const TETO_LUCRO_PRESUMIDO = 78_000_000;
 
-export type RegimeKey = "SIMPLES" | "HIBRIDO" | "LP_2026" | "LP_2027" | "LR_2026" | "LR_2027";
+export type RegimeKey = "SIMPLES" | "SIMPLES_2027" | "HIBRIDO" | "LP_2026" | "LP_2027" | "LR_2026" | "LR_2027";
 
 export interface Elegibilidade {
   elegivel: boolean;
@@ -52,6 +52,7 @@ export function elegibilidadePorRegime(
 ): Elegibilidade {
   switch (regime) {
     case "SIMPLES":
+    case "SIMPLES_2027":
     case "HIBRIDO":
       return elegibilidadeSimples(receitaAnual);
     case "LP_2026":
