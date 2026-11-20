@@ -1814,12 +1814,13 @@ async function callFn(payload){
   if(!res.ok)throw new Error(j.error||'Erro');
   return j;
 }
+function senhaProvisoria(){ const c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; const r=new Uint32Array(12); crypto.getRandomValues(r); return Array.from(r,x=>c[x%c.length]).join(''); }
 function colabModal(){
   openModal(`<div class="modal-h"><h3>Novo colaborador</h3></div>
     <div class="modal-b"><div class="form-grid">
       <div class="fg"><label>Nome *</label><input id="cl_nome"></div>
       <div class="fg"><label>E-mail *</label><input id="cl_email" type="email"></div>
-      <div class="fg"><label>Senha provisória *</label><input id="cl_pass" value="record2026"></div>
+      <div class="fg"><label>Senha provisória *</label><input id="cl_pass" value="${senhaProvisoria()}"><div class="card-sub">Senha gerada aleatoriamente. Envie ao colaborador por um canal privado e peça que troque no primeiro acesso.</div></div>
       <div class="form-grid two"><div class="fg"><label>Setor</label><select id="cl_dep">${Object.entries(DEPTS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
       <div class="fg"><label>Cargo</label><input id="cl_cargo"></div></div>
       <div class="fg"><label><input type="checkbox" id="cl_ger" style="width:auto"> É gerência (acessa tudo)</label></div>
