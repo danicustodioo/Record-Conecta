@@ -26,21 +26,15 @@ entre todos (nada se perde) e **acesso por setor**. Feito em um único arquivo
 
 ---
 
-## 2. Acessos de login (criados)
+## 2. Acessos de login
 
-**Senha padrão de todos: `record2026`** — troque no primeiro acesso (Gerência → Colaboradores → 🔑).
+Cada colaborador tem login próprio (e-mail e senha), criado pela gerência em
+**Painel de Gerência → Colaboradores**. Ao criar um acesso, o painel gera uma senha
+provisória aleatória: envie-a ao colaborador por um canal privado e peça que ele a
+troque no primeiro acesso.
 
-| E-mail | Nome | Setor | Acesso |
-|---|---|---|---|
-| `dani@recordconecta.com.br` | Daniela Custódio | Gerência | **Gerência (tudo)** |
-| `marcus@recordconecta.com.br` | Marcus Vinícius | Gerência | **Gerência (tudo)** |
-| `contabil@recordconecta.com.br` | Ana — Contábil | Contábil | Colaborador |
-| `fiscal@recordconecta.com.br` | Bruno — Fiscal | Fiscal | Colaborador |
-| `pessoal@recordconecta.com.br` | Carla — Pessoal | Pessoal | Colaborador |
-| `paralegal@recordconecta.com.br` | Diego — Paralegal | Paralegal | Colaborador |
-
-> Os nomes/e-mails dos setores são exemplos. A gerência pode editar, renomear e criar
-> os acessos reais dos colaboradores direto no painel (aba **Colaboradores**).
+> Por segurança, e-mails de acesso e senhas **não** são registrados neste repositório,
+> que é público.
 
 ---
 
