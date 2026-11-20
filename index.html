@@ -1411,7 +1411,9 @@ const EST_STATUS_COR = {nao_iniciada:'background:#eef2f7;color:#5a6b82',em_andam
 const EST_PAPEIS = {lider:'Líder',analista:'Analista',revisor:'Revisor',consulta:'Consulta'};
 const EST_COMPLEX = {C:'C · simples',B:'B · médio',A:'A · complexo'};
 const EST_DOC_STATUS = {pendente:'Pendente',recebido:'Recebido',nao_se_aplica:'Não se aplica'};
-const EST_LINKS = [['m2','M2 — Enquadramento'],['m3','M3 — Fornecedores'],['m4','M4 — Clientes'],['m5','M5 — Comparativo de regimes'],['pasta','Pasta / relatório']];
+const EST_LINKS = [['planilha','Planilha do estudo (cópia do modelo no Google Sheets)'],['pasta','Pasta do estudo no Drive']];
+const EST_LINKS_ANTIGOS = [['m2','M2'],['m3','M3'],['m4','M4'],['m5','M5']];
+const EST_MODELO_URL = 'https://docs.google.com/spreadsheets/d/1tc-HNehqpsIl3YRsC1HQ7V4rZ4JvunI4hDDZxHD1HcM/edit';
 const EST_DOCS_TEMPLATE = [
   ['Cadastral e societário',['Cartão CNPJ e CNAEs','Contrato social e alterações','Participações dos sócios em outras empresas','Estabelecimentos, UFs e municípios','Regime atual e histórico de opções (inclusive set/2026)','Benefícios fiscais vigentes (ICMS, ISS, federais)']],
   ['Fiscal — saídas',['Saídas por item (NCM/NBS, CFOP, CST, valor)','Faturamento por cliente (CNPJ/CPF, UF)','XML das notas emitidas (amostra de 3 meses)','PGDAS-D dos 12 meses (Simples)','EFD ICMS/IPI e EFD-Contribuições (LP/LR)','Apurações de ICMS, ISS, IPI, ST e monofásicos']],
@@ -1542,7 +1544,12 @@ function renderEstudoDetalhe(c,e,D,fer){
   const horas=D.horas.filter(h=>h.estudo_id===e.id);
   const totalH=horas.reduce((s,h)=>s+Number(h.horas),0);
   const links=e.links||{};
-  const linksHtml=EST_LINKS.filter(([k])=>links[k]).map(([k,l])=>`<a class="btn btn-ghost btn-sm" href="${esc(links[k])}" target="_blank" rel="noopener">↗ ${l}</a>`).join(' ');
+  const estUrl=u=>/^https:\/\//i.test(u||'')?u:'';
+  const linksHtml=[
+    estUrl(links.planilha)?`<a class="btn btn-primary btn-sm" href="${esc(links.planilha)}" target="_blank" rel="noopener">▦ Abrir planilha do estudo</a>`:(isGer()?`<span class="card-sub">Sem planilha: faça uma cópia do <a href="${EST_MODELO_URL}" target="_blank" rel="noopener">modelo</a> e cole o link em ✎ Editar.</span>`:'<span class="card-sub">Planilha do estudo ainda não cadastrada.</span>'),
+    estUrl(links.pasta)?`<a class="btn btn-ghost btn-sm" href="${esc(links.pasta)}" target="_blank" rel="noopener">↗ Pasta do estudo</a>`:'',
+    ...EST_LINKS_ANTIGOS.filter(([k])=>estUrl(links[k])).map(([k,l])=>`<a class="btn btn-ghost btn-sm" href="${esc(links[k])}" target="_blank" rel="noopener">↗ ${l}</a>`)
+  ].filter(Boolean).join(' ');
   c.innerHTML=`
     <div style="margin-bottom:10px"><button class="btn btn-ghost btn-sm" id="estVoltar">‹ Todos os estudos</button></div>
     <div class="card"><div class="item" style="border:0;padding:0;margin:0;background:none">
@@ -1672,11 +1679,13 @@ function estudoModal(e){
     </div>
     ${e?`<div class="fg"><label>Situação</label><select id="e_st">${[['ativo','Ativo'],['pausado','Pausado'],['encerrado','Encerrado']].map(([k,v])=>`<option value="${k}" ${e.status===k?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
     <div class="fg"><label>Observação</label><textarea id="e_obs">${esc(e?.observacao||'')}</textarea></div>
-    <div class="fg"><label>Links das planilhas do estudo (opcional)</label>${EST_LINKS.map(([k,l])=>`<input id="e_l_${k}" placeholder="${l}" value="${esc(L[k]||'')}" style="margin-bottom:6px">`).join('')}</div>
+    <div class="fg"><label>Planilha do estudo</label><input id="e_l_planilha" placeholder="https://docs.google.com/spreadsheets/..." value="${esc(L.planilha||'')}">
+      <div class="card-sub" style="margin-top:4px">Abra o <a href="${EST_MODELO_URL}" target="_blank" rel="noopener">modelo</a>, use Arquivo → Fazer uma cópia, renomeie para "Estudo 2027 — cliente", compartilhe só com a equipe do estudo e cole o link aqui.</div></div>
+    <div class="fg"><label>Pasta do estudo no Drive (opcional)</label><input id="e_l_pasta" placeholder="https://drive.google.com/drive/folders/..." value="${esc(L.pasta||'')}"></div>
     ${e?'<div class="card-sub">Mudar a complexidade ou a data de início recalcula as datas-alvo das etapas. Status e responsáveis são mantidos.</div>':'<div class="card-sub">As 8 etapas são criadas automaticamente com as datas-alvo. Depois, monte a equipe em "Equipe do estudo".</div>'}
   </div></div><div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="e_save">Salvar</button></div>`);
   $('#e_save').onclick=async()=>{
-    const links={}; EST_LINKS.forEach(([k])=>{ const v=$('#e_l_'+k).value.trim(); if(v) links[k]=v; });
+    const links={...L}; for(const [k] of EST_LINKS){ const v=$('#e_l_'+k).value.trim(); if(v && !/^https:\/\//i.test(v)) return toast('O link precisa começar com https://','err'); if(v) links[k]=v; else delete links[k]; }
     const rec={cliente:$('#e_cli').value.trim(),cnpj:$('#e_cnpj').value.trim(),regime_atual:$('#e_reg').value,complexidade:$('#e_cx').value,
       data_inicio:$('#e_ini').value||estIso(estHoje()),data_limite_legal:$('#e_lim').value||null,decisao_legal:$('#e_dec').value.trim(),observacao:$('#e_obs').value.trim(),links};
     if(e) rec.status=$('#e_st').value;
