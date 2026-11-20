@@ -247,6 +247,7 @@ nav{flex:1;padding:12px 10px;overflow-y:auto}
       <button class="nav-item" data-view="treinamentos"><span class="ic">✦</span> Treinamentos</button>
       <button class="nav-item" data-view="resultados"><span class="ic">✎</span> Resultados</button>
       <button class="nav-item" data-view="tarefas"><span class="ic">✔</span> Tarefas</button>
+      <button class="nav-item" data-view="estudos"><span class="ic">⧗</span> Estudos 2027</button>
       <div class="nav-sec">Pessoal</div>
       <button class="nav-item" data-view="agenda"><span class="ic">🗓</span> Minha Agenda</button>
       <button class="nav-item" data-view="setor"><span class="ic">◐</span> <span id="nav-setor-label">Meu Setor</span></button>
@@ -373,11 +374,13 @@ const VIEW_META = {
   treinamentos:['Treinamentos','Capacitações agendadas para a equipe'],
   resultados:['Resultados de Reunião','Registros e decisões das reuniões'],
   tarefas:['Tarefas','Plano de ação: prazos, encarregados e evolução'],
+  estudos:['Estudos 2027','Planejamento tributário: etapas, prazos, documentos e horas por estudo'],
   setor:['Meu Setor','Sua performance, exigências e feedbacks'],
   agenda:['Minha Agenda','Sua Google Agenda integrada — visível só para você'],
   gerencia:['Painel de Gerência','Plano estratégico e gestão da equipe'],
 };
 function go(view){
+  if(view==='estudos' && state.view!=='estudos') state.estudoId=null;
   state.view=view;
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   document.querySelectorAll('.bn-item[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
@@ -406,6 +409,7 @@ async function render(){
   if(v==='treinamentos') return renderEventos(c,'treinamento');
   if(v==='resultados') return renderResultados(c);
   if(v==='tarefas') return renderTarefas(c);
+  if(v==='estudos') return renderEstudos(c);
   if(v==='setor') return renderSetor(c);
   if(v==='agenda') return renderAgenda(c);
   if(v==='gerencia') return renderGerencia(c);
@@ -1399,6 +1403,365 @@ async function notificarTarefaNova(tarefaId, ids, incluirGerencia){
 /* ============================================================
    MEU SETOR (performance, exigências, feedback do usuário)
 ============================================================ */
+/* ============================================================
+   ESTUDOS 2027 — Planejamento tributário (equipes por estudo)
+============================================================ */
+const EST_STATUS = {nao_iniciada:'Não iniciada',em_andamento:'Em andamento',aguardando_cliente:'Aguardando cliente',em_revisao:'Em revisão',devolvida:'Devolvida',concluida:'Concluída'};
+const EST_STATUS_COR = {nao_iniciada:'background:#eef2f7;color:#5a6b82',em_andamento:'background:#e6effa;color:#24548f',aguardando_cliente:'background:#fff3d6;color:#a9791b',em_revisao:'background:#efe8f8;color:#6a4596',devolvida:'background:#fdece9;color:var(--danger)',concluida:'background:#e5f4ea;color:#2e7d4f'};
+const EST_PAPEIS = {lider:'Líder',analista:'Analista',revisor:'Revisor',consulta:'Consulta'};
+const EST_COMPLEX = {C:'C · simples',B:'B · médio',A:'A · complexo'};
+const EST_DOC_STATUS = {pendente:'Pendente',recebido:'Recebido',nao_se_aplica:'Não se aplica'};
+const EST_LINKS = [['m2','M2 — Enquadramento'],['m3','M3 — Fornecedores'],['m4','M4 — Clientes'],['m5','M5 — Comparativo de regimes'],['pasta','Pasta / relatório']];
+const EST_DOCS_TEMPLATE = [
+  ['Cadastral e societário',['Cartão CNPJ e CNAEs','Contrato social e alterações','Participações dos sócios em outras empresas','Estabelecimentos, UFs e municípios','Regime atual e histórico de opções (inclusive set/2026)','Benefícios fiscais vigentes (ICMS, ISS, federais)']],
+  ['Fiscal — saídas',['Saídas por item (NCM/NBS, CFOP, CST, valor)','Faturamento por cliente (CNPJ/CPF, UF)','XML das notas emitidas (amostra de 3 meses)','PGDAS-D dos 12 meses (Simples)','EFD ICMS/IPI e EFD-Contribuições (LP/LR)','Apurações de ICMS, ISS, IPI, ST e monofásicos']],
+  ['Fiscal — entradas',['Entradas por fornecedor COM CNPJ e por item','Regime de cada fornecedor relevante','Serviços tomados (NFS-e recebidas)','Despesas recorrentes: energia, aluguel, frete, telecom, software','Compras de imobilizado (12 meses e previsão 2027)','Saldos credores de PIS/Cofins, ICMS e IPI (LP/LR)']],
+  ['Contábil',['Balancete mensal dos 12 meses','DRE dos 12 meses e do último exercício','Balanço patrimonial','ECD e ECF do último exercício (LP/LR)','Prejuízo fiscal e base negativa (LR)','Estoque final por item','Contratos de longo prazo']],
+  ['Folha e trabalhista',['Resumo mensal da folha (proventos, INSS, FGTS, nº de empregados)','Pró-labore e retiradas dos sócios','Autônomos, RPAs e terceirizados','Desoneração da folha (CPRB), se houver','Previsão de contratações ou reduções em 2027']],
+  ['Comercial e operacional',['Tabela e formação de preço atual','Contratos com clientes: cláusulas de reajuste e de tributos','Prazos médios e meios de recebimento (cartão, PIX, boleto)','Sistema de gestão e emissor de nota fiscal','Planos para 2027 (crescimento, produtos, filiais)']],
+];
+let EST_FERIADOS = null;
+async function estFeriados(){ if(EST_FERIADOS) return EST_FERIADOS; const {data}=await sb.from('feriados').select('data'); EST_FERIADOS=new Set((data||[]).map(f=>f.data)); return EST_FERIADOS; }
+function estIso(d){ const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function estHoje(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+function estUtil(d,fer){ const w=d.getDay(); return w!==0 && w!==6 && !fer.has(estIso(d)); }
+// dias úteis de atraso: conta os dias úteis depois da data-alvo até a data de referência
+function estAtraso(alvo, ref, fer){
+  if(!alvo) return 0;
+  const a=new Date(alvo+'T00:00:00'); const r=ref?new Date(ref+'T00:00:00'):estHoje();
+  if(r<=a) return 0;
+  let n=0; const x=new Date(a); while(x<r){ x.setDate(x.getDate()+1); if(estUtil(x,fer)) n++; } return n;
+}
+function estStChip(s){ return `<span class="chip" style="${EST_STATUS_COR[s]||''}">${EST_STATUS[s]||s}</span>`; }
+function estFmt(d){ return d?fmtDate(d+'T00:00:00'):'—'; }
+function estHoras(n){ return (Math.round((Number(n)||0)*10)/10).toLocaleString('pt-BR'); }
+
+async function estCarregar(){
+  const [es,et,mem,hor,prof,par] = await Promise.all([
+    sb.from('estudos').select('*').order('created_at',{ascending:false}),
+    sb.from('estudo_etapas').select('*'),
+    sb.from('estudo_membros').select('*'),
+    sb.from('estudo_horas').select('*').order('data',{ascending:false}),
+    sb.from('profiles').select('id,nome,departamento,is_gerencia,ativo').order('nome'),
+    sb.from('estudo_etapa_param').select('*').order('numero'),
+  ]);
+  const err=[es,et,mem,hor,prof,par].find(r=>r.error);
+  if(err) throw err.error;
+  return {estudos:es.data||[], etapas:et.data||[], membros:mem.data||[], horas:hor.data||[], profs:prof.data||[], params:par.data||[]};
+}
+
+async function renderEstudos(c){
+  loadingCard(c);
+  let D; try{ D=await estCarregar(); }catch(e){ c.innerHTML=`<div class="card">${emptyBox('Não foi possível carregar os estudos: '+(e.message||e),'⚠')}</div>`; return; }
+  const fer=await estFeriados();
+  if(state.estudoId){ const e=D.estudos.find(x=>x.id===state.estudoId); if(e) return renderEstudoDetalhe(c,e,D,fer); state.estudoId=null; }
+  const nome=id=>D.profs.find(p=>p.id===id)?.nome||'—';
+  const hoje=estHoje(); const in7=new Date(hoje.getTime()+7*864e5);
+  const inicioMes=new Date(hoje.getFullYear(),hoje.getMonth(),1);
+  const resumo=D.estudos.map(e=>{
+    const ets=D.etapas.filter(t=>t.estudo_id===e.id).sort((a,b)=>a.numero-b.numero);
+    const atual=ets.find(t=>t.status!=='concluida');
+    const abertas=ets.filter(t=>t.status!=='concluida');
+    const atraso=Math.max(0,...abertas.map(t=>estAtraso(t.data_alvo,null,fer)));
+    const entrega=ets.find(t=>t.numero===7)?.data_alvo;
+    const lideres=D.membros.filter(m=>m.estudo_id===e.id&&m.papel==='lider').map(m=>nome(m.profile_id));
+    const horas=D.horas.filter(h=>h.estudo_id===e.id).reduce((s,h)=>s+Number(h.horas),0);
+    const meu=D.membros.find(m=>m.estudo_id===e.id&&m.profile_id===state.profile.id);
+    return {e,ets,atual,atraso,entrega,lideres,horas,meu};
+  });
+  const ativos=resumo.filter(r=>r.e.status==='ativo');
+  const etAbertas=D.etapas.filter(t=>t.status!=='concluida'&&ativos.some(r=>r.e.id===t.estudo_id));
+  const atrasadas=etAbertas.filter(t=>estAtraso(t.data_alvo,null,fer)>0).length;
+  const vencem=etAbertas.filter(t=>{ if(!t.data_alvo) return false; const d=new Date(t.data_alvo+'T00:00:00'); return d>=hoje&&d<=in7; }).length;
+  const aguardando=etAbertas.filter(t=>t.status==='aguardando_cliente').length;
+  const horasMes=D.horas.filter(h=>new Date(h.data+'T00:00:00')>=inicioMes && (isGer()||h.profile_id===state.profile.id)).reduce((s,h)=>s+Number(h.horas),0);
+  const filtro=state.estFiltro||'ativo';
+  const lista=resumo.filter(r=>filtro==='todos'||r.e.status===filtro);
+  const card=r=>`<div class="item" style="cursor:pointer;${r.atraso>0&&r.e.status==='ativo'?'border-left:3px solid var(--danger);background:#fff6f4':''}" data-est="${r.e.id}">
+      <div class="it-top"><div>
+        <div class="it-title">${esc(r.e.cliente)}</div>
+        <div class="it-meta">
+          <span class="chip">${EST_COMPLEX[r.e.complexidade]}</span>
+          ${r.e.regime_atual?`<span class="chip">${esc(r.e.regime_atual)}</span>`:''}
+          ${r.e.status!=='ativo'?`<span class="chip">${r.e.status==='encerrado'?'Encerrado':'Pausado'}</span>`:(r.atual?`<span>▶ ${r.atual.numero}. ${esc(D.params.find(p=>p.numero===r.atual.numero)?.nome||'')}</span>${estStChip(r.atual.status)}`:'<span class="chip" style="background:#e5f4ea;color:#2e7d4f">Todas as etapas concluídas</span>')}
+          ${r.atraso>0&&r.e.status==='ativo'?`<span class="chip pri-alta">⚠️ ${r.atraso} dia(s) útil(eis) de atraso</span>`:''}
+        </div>
+        <div class="it-meta">
+          <span>👤 Líder: ${esc(r.lideres.join(', ')||'sem líder')}</span>
+          <span>🗓 Entrega: ${estFmt(r.entrega)}</span>
+          ${r.e.data_limite_legal?`<span>⚖️ Prazo legal: ${estFmt(r.e.data_limite_legal)}</span>`:''}
+          <span>⏱ ${estHoras(r.horas)} h</span>
+          ${r.meu?`<span class="chip">Você: ${EST_PAPEIS[r.meu.papel]}</span>`:''}
+        </div>
+      </div><div class="row-actions"><button class="btn btn-ghost btn-sm">Abrir ›</button></div></div>
+    </div>`;
+  let porResp='';
+  if(isGer()){
+    const linhas=D.profs.filter(p=>p.ativo!==false).map(p=>{
+      const abertas=etAbertas.filter(t=>t.responsavel_id===p.id);
+      const atr=abertas.filter(t=>estAtraso(t.data_alvo,null,fer)>0).length;
+      const hm=D.horas.filter(h=>h.profile_id===p.id&&new Date(h.data+'T00:00:00')>=inicioMes).reduce((s,h)=>s+Number(h.horas),0);
+      const nEst=new Set(D.membros.filter(m=>m.profile_id===p.id).map(m=>m.estudo_id)).size;
+      return {p,abertas:abertas.length,atr,hm,nEst};
+    }).filter(x=>x.abertas||x.hm||x.nEst);
+    porResp=`<div class="card" style="margin-top:14px"><h3>Por pessoa</h3><div class="card-sub">Etapas abertas sob responsabilidade, atrasos e horas no mês</div>
+      ${linhas.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+        <tr style="text-align:left;color:#5a6b82"><th style="padding:6px">Pessoa</th><th>Estudos</th><th>Etapas abertas</th><th>Atrasadas</th><th>Horas no mês</th></tr>
+        ${linhas.map(x=>`<tr style="border-top:1px solid var(--line)"><td style="padding:6px">${esc(x.p.nome)}</td><td>${x.nEst}</td><td>${x.abertas}</td><td>${x.atr?`<b style="color:var(--danger)">${x.atr}</b>`:'0'}</td><td>${estHoras(x.hm)}</td></tr>`).join('')}
+      </table></div>`:emptyBox('Ninguém alocado em estudos ainda.','◇')}</div>`;
+  }
+  c.innerHTML=`
+    <div class="metrics">
+      <div class="metric"><div class="v">${ativos.length}</div><div class="l">Estudos ativos</div></div>
+      <div class="metric"><div class="v" style="${atrasadas?'color:var(--danger)':''}">${atrasadas}</div><div class="l">Etapas atrasadas</div></div>
+      <div class="metric"><div class="v">${vencem}</div><div class="l">Etapas vencendo em 7 dias</div></div>
+      <div class="metric"><div class="v">${aguardando}</div><div class="l">Aguardando cliente</div></div>
+      <div class="metric"><div class="v">${estHoras(horasMes)}</div><div class="l">${isGer()?'Horas no mês (equipe)':'Suas horas no mês'}</div></div>
+    </div>
+    <div class="section-head"><h3>Estudos · Planejamento tributário 2027</h3>${isGer()?'<button class="btn btn-gold btn-sm" id="estNovo">+ Novo estudo</button>':''}</div>
+    <div class="filters"><select id="estFiltro">
+      <option value="ativo" ${filtro==='ativo'?'selected':''}>Ativos</option><option value="pausado" ${filtro==='pausado'?'selected':''}>Pausados</option>
+      <option value="encerrado" ${filtro==='encerrado'?'selected':''}>Encerrados</option><option value="todos" ${filtro==='todos'?'selected':''}>Todos</option></select></div>
+    <div class="card">${lista.length?lista.map(card).join(''):emptyBox(isGer()?'Nenhum estudo aqui. Clique em "+ Novo estudo".':'Você ainda não faz parte de nenhum estudo.','⧗')}</div>
+    ${porResp}`;
+  if($('#estNovo')) $('#estNovo').onclick=()=>estudoModal(null);
+  $('#estFiltro').onchange=ev=>{ state.estFiltro=ev.target.value; render(); };
+  c.querySelectorAll('[data-est]').forEach(b=>b.onclick=()=>{ state.estudoId=b.dataset.est; state.estTab=state.estTab||'etapas'; render(); });
+}
+
+function renderEstudoDetalhe(c,e,D,fer){
+  const nome=id=>D.profs.find(p=>p.id===id)?.nome||'—';
+  const ets=D.etapas.filter(t=>t.estudo_id===e.id).sort((a,b)=>a.numero-b.numero);
+  const mem=D.membros.filter(m=>m.estudo_id===e.id);
+  const meuPapel=mem.find(m=>m.profile_id===state.profile.id)?.papel||null;
+  const ger=isGer();
+  const podeEtapa=t=>ger||meuPapel==='lider'||(t.responsavel_id===state.profile.id&&['analista','revisor'].includes(meuPapel))||(t.numero===6&&meuPapel==='revisor');
+  const podeDocs=ger||['lider','analista'].includes(meuPapel);
+  const podeHoras=ger||['lider','analista','revisor'].includes(meuPapel);
+  const tab=state.estTab||'etapas';
+  const horas=D.horas.filter(h=>h.estudo_id===e.id);
+  const totalH=horas.reduce((s,h)=>s+Number(h.horas),0);
+  const links=e.links||{};
+  const linksHtml=EST_LINKS.filter(([k])=>links[k]).map(([k,l])=>`<a class="btn btn-ghost btn-sm" href="${esc(links[k])}" target="_blank" rel="noopener">↗ ${l}</a>`).join(' ');
+  c.innerHTML=`
+    <div style="margin-bottom:10px"><button class="btn btn-ghost btn-sm" id="estVoltar">‹ Todos os estudos</button></div>
+    <div class="card"><div class="item" style="border:0;padding:0;margin:0;background:none">
+      <div class="it-top"><div>
+        <h3 style="margin:0">${esc(e.cliente)}</h3>
+        <div class="it-meta" style="margin-top:6px">
+          ${e.cnpj?`<span>${esc(e.cnpj)}</span>`:''}<span class="chip">${EST_COMPLEX[e.complexidade]}</span>${e.regime_atual?`<span class="chip">${esc(e.regime_atual)}</span>`:''}
+          <span>Início: ${estFmt(e.data_inicio)}</span>${e.data_limite_legal?`<span>⚖️ ${esc(e.decisao_legal||'Prazo legal')}: <b>${estFmt(e.data_limite_legal)}</b></span>`:''}
+          <span>⏱ ${estHoras(totalH)} h lançadas</span>${e.status!=='ativo'?`<span class="chip">${e.status==='encerrado'?'Encerrado':'Pausado'}</span>`:''}
+        </div>
+        <div class="it-meta">${mem.length?mem.map(m=>`<span class="chip">${esc(nome(m.profile_id))} · ${EST_PAPEIS[m.papel]}</span>`).join(''):'<span class="chip">Sem equipe</span>'}</div>
+        ${e.observacao?`<div class="it-body">${esc(e.observacao)}</div>`:''}
+        ${linksHtml?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${linksHtml}</div>`:''}
+      </div>
+      ${ger?`<div class="row-actions" style="flex-wrap:wrap;gap:6px"><button class="btn btn-gold btn-sm" id="estEquipe">👥 Equipe do estudo</button><button class="btn btn-ghost btn-sm" id="estEditar">✎ Editar</button><button class="icon-btn" id="estExcluir" title="Excluir estudo">🗑</button></div>`:''}
+      </div>
+    </div></div>
+    <div class="subtabs" style="margin-top:14px">
+      <button class="subtab ${tab==='etapas'?'active':''}" data-etab="etapas">Etapas</button>
+      <button class="subtab ${tab==='docs'?'active':''}" data-etab="docs">Documentos</button>
+      <button class="subtab ${tab==='horas'?'active':''}" data-etab="horas">Horas</button>
+    </div>
+    <div id="estTabBody"></div>`;
+  $('#estVoltar').onclick=()=>{ state.estudoId=null; render(); };
+  c.querySelectorAll('[data-etab]').forEach(b=>b.onclick=()=>{ state.estTab=b.dataset.etab; render(); });
+  if(ger){ $('#estEquipe').onclick=()=>equipeModal(e,mem,D.profs); $('#estEditar').onclick=()=>estudoModal(e); $('#estExcluir').onclick=async()=>{ if(!confirm('Excluir o estudo "'+e.cliente+'" com todas as etapas, documentos e horas? Isso não pode ser desfeito.')) return; const {error}=await sb.from('estudos').delete().eq('id',e.id); if(error) return toast(error.message,'err'); toast('Estudo excluído','ok'); state.estudoId=null; render(); }; }
+  const body=$('#estTabBody');
+  if(tab==='etapas'){
+    body.innerHTML=`<div class="card">${ets.map(t=>{
+      const p=D.params.find(x=>x.numero===t.numero)||{};
+      const atr=t.status==='concluida'?estAtraso(t.data_alvo,t.concluida_em,fer):estAtraso(t.data_alvo,null,fer);
+      const pode=podeEtapa(t);
+      return `<div class="item" ${atr>0&&t.status!=='concluida'?'style="border-left:3px solid var(--danger);background:#fff6f4"':(t.status==='concluida'?'style="opacity:.8"':'')}>
+        <div class="it-top"><div>
+          <div class="it-title">${t.numero}. ${esc(p.nome||'')}</div>
+          <div class="it-meta">${estStChip(t.status)}<span>👤 ${t.responsavel_id?esc(nome(t.responsavel_id)):'sem responsável'}</span>
+            <span>🗓 Alvo: ${estFmt(t.data_alvo)}</span>${t.concluida_em?`<span>✅ ${estFmt(t.concluida_em)}</span>`:''}
+            ${atr>0?`<span class="chip pri-alta">${atr} dia(s) útil(eis) ${t.status==='concluida'?'após o alvo':'de atraso'}</span>`:''}</div>
+          <div class="card-sub" style="margin-top:4px">Entregável: ${esc(p.entregavel||'')} · Para avançar: ${esc(p.criterio||'')}</div>
+          ${t.pendencias?`<div class="it-body" style="background:#f6f8fb;border-radius:6px;padding:6px 8px"><b>Pendências:</b> ${esc(t.pendencias)}</div>`:''}
+          ${t.entregavel_link?`<div style="margin-top:6px"><a href="${esc(t.entregavel_link)}" target="_blank" rel="noopener">↗ Entregável</a></div>`:''}
+        </div>${pode?`<div class="row-actions"><button class="btn btn-ghost btn-sm" data-etedit="${t.id}">Atualizar</button></div>`:''}</div>
+      </div>`; }).join('')}</div>
+      <div class="card-sub" style="margin-top:8px">As datas-alvo contam dias úteis a partir do início, conforme a complexidade, e já descontam os feriados cadastrados. A etapa 8 usa o prazo legal do estudo.</div>`;
+    body.querySelectorAll('[data-etedit]').forEach(b=>b.onclick=()=>etapaModal(ets.find(t=>t.id===b.dataset.etedit),D,mem,ger||meuPapel==='lider'));
+  }
+  if(tab==='docs') estRenderDocs(body,e,podeDocs,ger||meuPapel==='lider');
+  if(tab==='horas'){
+    const porEtapa=D.params.filter(p=>p.numero<=8).map(p=>({p,h:horas.filter(h=>h.etapa===p.numero).reduce((s,h)=>s+Number(h.horas),0)}));
+    const retr=horas.filter(h=>h.retrabalho).reduce((s,h)=>s+Number(h.horas),0);
+    body.innerHTML=`<div class="section-head"><h3>Horas · total ${estHoras(totalH)} h${retr?` (retrabalho ${estHoras(retr)} h)`:''}</h3>${podeHoras?'<button class="btn btn-gold btn-sm" id="estHoraNova">+ Lançar horas</button>':''}</div>
+      <div class="card"><div style="display:flex;flex-wrap:wrap;gap:6px">${porEtapa.map(x=>`<span class="chip">${x.p.numero}. ${esc(x.p.nome)}: <b>${estHoras(x.h)} h</b></span>`).join('')}</div></div>
+      <div class="card" style="margin-top:10px">${horas.length?horas.map(h=>`<div class="item"><div class="it-top"><div>
+        <div class="it-title">${estHoras(h.horas)} h · ${esc(nome(h.profile_id))}</div>
+        <div class="it-meta"><span>🗓 ${estFmt(h.data)}</span><span>Etapa ${h.etapa}. ${esc(D.params.find(p=>p.numero===h.etapa)?.nome||'')}</span>${h.retrabalho?'<span class="chip pri-alta">Retrabalho</span>':''}</div>
+        ${h.descricao?`<div class="it-body">${esc(h.descricao)}</div>`:''}
+      </div>${(h.profile_id===state.profile.id||ger)?`<div class="row-actions"><button class="icon-btn" data-hdel="${h.id}">🗑</button></div>`:''}</div></div>`).join(''):emptyBox('Nenhuma hora lançada.','⏱')}</div>`;
+    if($('#estHoraNova')) $('#estHoraNova').onclick=()=>horaModal(e,D.params);
+    body.querySelectorAll('[data-hdel]').forEach(b=>b.onclick=()=>delRow('estudo_horas',b.dataset.hdel,'Lançamento excluído'));
+  }
+}
+
+async function estRenderDocs(body,e,pode,podeExcluir){
+  body.innerHTML='<div class="card"><div class="empty">Carregando…</div></div>';
+  const {data:docs,error}=await sb.from('estudo_docs').select('*').eq('estudo_id',e.id).order('ordem');
+  if(error){ body.innerHTML=`<div class="card">${emptyBox(error.message,'⚠')}</div>`; return; }
+  const total=(docs||[]).length, ok=(docs||[]).filter(d=>d.status==='recebido'||d.status==='nao_se_aplica').length;
+  const areas=[...new Set((docs||[]).map(d=>d.area))];
+  body.innerHTML=`<div class="section-head"><h3>Checklist da coleta · ${ok}/${total} resolvidos</h3>
+      ${pode?`<div style="display:flex;gap:6px">${!total?'<button class="btn btn-gold btn-sm" id="docPadrao">Carregar checklist padrão</button>':''}<button class="btn btn-ghost btn-sm" id="docNovo">+ Item</button></div>`:''}</div>
+    ${total?`<div class="progress" style="margin-bottom:10px"><i style="width:${Math.round(ok/total*100)}%"></i></div>`:''}
+    ${areas.length?areas.map(a=>`<div class="card" style="margin-bottom:10px"><h3>${esc(a)}</h3>${(docs||[]).filter(d=>d.area===a).map(d=>`
+      <div class="item"><div class="it-top"><div style="flex:1">
+        <div class="it-title" style="font-weight:500">${esc(d.item)}</div>
+        ${d.observacao?`<div class="card-sub">${esc(d.observacao)}</div>`:''}
+        ${d.link?`<a href="${esc(d.link)}" target="_blank" rel="noopener">↗ arquivo</a>`:''}
+      </div><div class="row-actions" style="gap:6px">
+        ${pode?`<select data-dst="${d.id}" style="padding:4px 6px;border-radius:6px;border:1px solid var(--line)">${Object.entries(EST_DOC_STATUS).map(([k,v])=>`<option value="${k}" ${d.status===k?'selected':''}>${v}</option>`).join('')}</select>
+          <button class="icon-btn" data-dedit="${d.id}" title="Observação e link">✎</button>${podeExcluir?`<button class="icon-btn" data-ddel="${d.id}">🗑</button>`:''}`
+          :`<span class="chip" ${d.status==='recebido'?'style="background:#e5f4ea;color:#2e7d4f"':''}>${EST_DOC_STATUS[d.status]}</span>`}
+      </div></div></div>`).join('')}</div>`).join(''):`<div class="card">${emptyBox(pode?'Nenhum item. Carregue o checklist padrão da etapa 2.':'Checklist ainda não criado.','☐')}</div>`}`;
+  if($('#docPadrao')) $('#docPadrao').onclick=async()=>{
+    let ordem=0; const rows=[];
+    EST_DOCS_TEMPLATE.forEach(([area,itens])=>itens.forEach(item=>rows.push({estudo_id:e.id,area,item,ordem:ordem++})));
+    const {error}=await sb.from('estudo_docs').insert(rows); if(error) return toast(error.message,'err');
+    toast('Checklist carregado','ok'); estRenderDocs(body,e,pode,podeExcluir);
+  };
+  if($('#docNovo')) $('#docNovo').onclick=()=>docModal(null,e,()=>estRenderDocs(body,e,pode,podeExcluir),areas);
+  body.querySelectorAll('[data-dst]').forEach(s=>s.onchange=async()=>{ const {error}=await sb.from('estudo_docs').update({status:s.value}).eq('id',s.dataset.dst); if(error) toast(error.message,'err'); else { toast('Atualizado','ok'); estRenderDocs(body,e,pode,podeExcluir); } });
+  body.querySelectorAll('[data-dedit]').forEach(b=>b.onclick=()=>docModal((docs||[]).find(d=>d.id===b.dataset.dedit),e,()=>estRenderDocs(body,e,pode,podeExcluir),areas));
+  body.querySelectorAll('[data-ddel]').forEach(b=>b.onclick=()=>delRow('estudo_docs',b.dataset.ddel,'Item excluído',()=>estRenderDocs(body,e,pode,podeExcluir)));
+}
+
+function docModal(d,e,cb,areas){
+  openModal(`<div class="modal-h"><h3>${d?'Item do checklist':'Novo item'}</h3></div><div class="modal-b"><div class="form-grid">
+    ${d?`<div class="fg"><label>Item</label><input value="${esc(d.item)}" disabled></div>`:`
+      <div class="fg"><label>Área</label><input id="d_area" list="d_areas" value="${esc(areas[0]||'Outros')}"><datalist id="d_areas">${areas.map(a=>`<option value="${esc(a)}">`).join('')}</datalist></div>
+      <div class="fg"><label>Item *</label><input id="d_item"></div>`}
+    <div class="fg"><label>Observação</label><textarea id="d_obs">${esc(d?.observacao||'')}</textarea></div>
+    <div class="fg"><label>Link do arquivo (opcional)</label><input id="d_link" value="${esc(d?.link||'')}" placeholder="https://"></div>
+  </div></div><div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="d_save">Salvar</button></div>`);
+  $('#d_save').onclick=async()=>{
+    let error;
+    if(d){ ({error}=await sb.from('estudo_docs').update({observacao:$('#d_obs').value.trim(),link:$('#d_link').value.trim()}).eq('id',d.id)); }
+    else { const item=$('#d_item').value.trim(); if(!item) return toast('Informe o item.','err');
+      ({error}=await sb.from('estudo_docs').insert({estudo_id:e.id,area:$('#d_area').value.trim()||'Outros',item,ordem:999,observacao:$('#d_obs').value.trim(),link:$('#d_link').value.trim()})); }
+    if(error) return toast(error.message,'err');
+    closeModal(); toast('Salvo','ok'); cb&&cb();
+  };
+}
+
+function estudoModal(e){
+  const L=e?.links||{};
+  openModal(`<div class="modal-h"><h3>${e?'Editar estudo':'Novo estudo'}</h3></div><div class="modal-b"><div class="form-grid">
+    <div class="fg"><label>Cliente *</label><input id="e_cli" value="${esc(e?.cliente||'')}"></div>
+    <div class="form-grid two">
+      <div class="fg"><label>CNPJ</label><input id="e_cnpj" value="${esc(e?.cnpj||'')}"></div>
+      <div class="fg"><label>Regime atual</label><select id="e_reg">${['','Simples Nacional','Simples híbrido','Lucro Presumido','Lucro Real'].map(r=>`<option ${ (e?.regime_atual||'')===r?'selected':''}>${r}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-grid two">
+      <div class="fg"><label>Complexidade</label><select id="e_cx">${Object.entries(EST_COMPLEX).map(([k,v])=>`<option value="${k}" ${(e?.complexidade||'B')===k?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="fg"><label>Data de início (contrato)</label><input type="date" id="e_ini" value="${e?.data_inicio||estIso(estHoje())}"></div>
+    </div>
+    <div class="form-grid two">
+      <div class="fg"><label>Prazo legal que o estudo precisa cumprir</label><input type="date" id="e_lim" value="${e?.data_limite_legal||''}"></div>
+      <div class="fg"><label>Qual decisão vence nessa data</label><input id="e_dec" value="${esc(e?.decisao_legal||'')}" placeholder="ex.: opção pelo Lucro Real anual"></div>
+    </div>
+    ${e?`<div class="fg"><label>Situação</label><select id="e_st">${[['ativo','Ativo'],['pausado','Pausado'],['encerrado','Encerrado']].map(([k,v])=>`<option value="${k}" ${e.status===k?'selected':''}>${v}</option>`).join('')}</select></div>`:''}
+    <div class="fg"><label>Observação</label><textarea id="e_obs">${esc(e?.observacao||'')}</textarea></div>
+    <div class="fg"><label>Links das planilhas do estudo (opcional)</label>${EST_LINKS.map(([k,l])=>`<input id="e_l_${k}" placeholder="${l}" value="${esc(L[k]||'')}" style="margin-bottom:6px">`).join('')}</div>
+    ${e?'<div class="card-sub">Mudar a complexidade ou a data de início recalcula as datas-alvo das etapas. Status e responsáveis são mantidos.</div>':'<div class="card-sub">As 8 etapas são criadas automaticamente com as datas-alvo. Depois, monte a equipe em "Equipe do estudo".</div>'}
+  </div></div><div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="e_save">Salvar</button></div>`);
+  $('#e_save').onclick=async()=>{
+    const links={}; EST_LINKS.forEach(([k])=>{ const v=$('#e_l_'+k).value.trim(); if(v) links[k]=v; });
+    const rec={cliente:$('#e_cli').value.trim(),cnpj:$('#e_cnpj').value.trim(),regime_atual:$('#e_reg').value,complexidade:$('#e_cx').value,
+      data_inicio:$('#e_ini').value||estIso(estHoje()),data_limite_legal:$('#e_lim').value||null,decisao_legal:$('#e_dec').value.trim(),observacao:$('#e_obs').value.trim(),links};
+    if(e) rec.status=$('#e_st').value;
+    if(!rec.cliente) return toast('Informe o cliente.','err');
+    let error,id=e?.id;
+    if(e){ ({error}=await sb.from('estudos').update(rec).eq('id',e.id)); }
+    else { const r=await sb.from('estudos').insert(rec).select('id').single(); error=r.error; id=r.data&&r.data.id; }
+    if(error) return toast(error.message,'err');
+    closeModal(); toast(e?'Estudo atualizado':'Estudo criado','ok');
+    if(!e){ state.estudoId=id; state.estTab='etapas'; }
+    render();
+  };
+}
+
+function equipeModal(e,mem,profs){
+  const ativos=profs.filter(p=>p.ativo!==false&&!p.is_gerencia);
+  const linhas=ativos.map(p=>{ const m=mem.find(x=>x.profile_id===p.id);
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border-bottom:1px solid var(--line)">
+      <span>${esc(p.nome)}${p.departamento?` <span class="card-sub">· ${DEPTS[p.departamento]||p.departamento}</span>`:''}</span>
+      <select class="eq_sel" data-pid="${p.id}" style="padding:5px 8px;border-radius:6px;border:1px solid var(--line)">
+        <option value="">Sem acesso</option>${Object.entries(EST_PAPEIS).map(([k,v])=>`<option value="${k}" ${m?.papel===k?'selected':''}>${v}</option>`).join('')}
+      </select></div>`; }).join('');
+  openModal(`<div class="modal-h"><h3>Equipe do estudo · ${esc(e.cliente)}</h3></div><div class="modal-b">
+    <div class="card-sub" style="margin-bottom:8px">Quem tem um papel vê este estudo; quem fica "Sem acesso" não vê. A gerência vê todos os estudos.<br>
+    <b>Líder</b>: tudo no estudo · <b>Analista</b>: documentos, horas e as etapas pelas quais responde · <b>Revisor</b>: revisão técnica (etapa 6) e horas · <b>Consulta</b>: só visualiza.</div>
+    <div style="max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff">${linhas||'<div class="card-sub" style="padding:8px">Nenhum colaborador cadastrado</div>'}</div>
+  </div><div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="eq_save">Salvar equipe</button></div>`);
+  $('#eq_save').onclick=async()=>{
+    const sel=[...document.querySelectorAll('.eq_sel')].map(s=>({pid:s.dataset.pid,papel:s.value}));
+    const remover=sel.filter(x=>!x.papel&&mem.some(m=>m.profile_id===x.pid)).map(x=>x.pid);
+    const gravar=sel.filter(x=>x.papel).map(x=>({estudo_id:e.id,profile_id:x.pid,papel:x.papel}));
+    if(remover.length){ const {error}=await sb.from('estudo_membros').delete().eq('estudo_id',e.id).in('profile_id',remover); if(error) return toast(error.message,'err'); }
+    if(gravar.length){ const {error}=await sb.from('estudo_membros').upsert(gravar,{onConflict:'estudo_id,profile_id'}); if(error) return toast(error.message,'err'); }
+    closeModal(); toast('Equipe atualizada','ok'); render();
+  };
+}
+
+function etapaModal(t,D,mem,podeAtribuir){
+  const p=D.params.find(x=>x.numero===t.numero)||{};
+  const opts=mem.map(m=>D.profs.find(x=>x.id===m.profile_id)).filter(Boolean);
+  if(isGer()) D.profs.filter(x=>x.is_gerencia&&!opts.some(o=>o.id===x.id)).forEach(x=>opts.push(x));
+  openModal(`<div class="modal-h"><h3>Etapa ${t.numero} · ${esc(p.nome||'')}</h3></div><div class="modal-b"><div class="form-grid">
+    <div class="card-sub">Entregável: ${esc(p.entregavel||'')}<br>Para avançar: ${esc(p.criterio||'')}</div>
+    <div class="form-grid two">
+      <div class="fg"><label>Status</label><select id="t_st">${Object.entries(EST_STATUS).map(([k,v])=>`<option value="${k}" ${t.status===k?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="fg"><label>Concluída em</label><input type="date" id="t_conc" value="${t.concluida_em||''}"></div>
+    </div>
+    ${podeAtribuir?`<div class="fg"><label>Responsável</label><select id="t_resp"><option value="">— sem responsável —</option>${opts.map(o=>`<option value="${o.id}" ${t.responsavel_id===o.id?'selected':''}>${esc(o.nome)}</option>`).join('')}</select><div class="card-sub">Só aparecem pessoas da equipe do estudo.</div></div>`:''}
+    ${isGer()?`<div class="fg"><label>Data-alvo</label><input type="date" id="t_alvo" value="${t.data_alvo||''}"><div class="card-sub">Ajuste manual: será recalculada se a complexidade ou o início do estudo mudarem.</div></div>`:''}
+    <div class="fg"><label>Pendências</label><textarea id="t_pend" placeholder="ex.: falta o relatório de entradas com CNPJ">${esc(t.pendencias||'')}</textarea></div>
+    <div class="fg"><label>Link do entregável</label><input id="t_link" value="${esc(t.entregavel_link||'')}" placeholder="https://"></div>
+  </div></div><div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="t_save">Salvar</button></div>`);
+  $('#t_st').onchange=ev=>{ if(ev.target.value==='concluida'&&!$('#t_conc').value) $('#t_conc').value=estIso(estHoje()); };
+  $('#t_save').onclick=async()=>{
+    const rec={status:$('#t_st').value,concluida_em:$('#t_conc').value||null,pendencias:$('#t_pend').value.trim(),entregavel_link:$('#t_link').value.trim()};
+    if(rec.status==='concluida'&&!rec.concluida_em) rec.concluida_em=estIso(estHoje());
+    if(rec.status!=='concluida') rec.concluida_em=null;
+    if(podeAtribuir) rec.responsavel_id=$('#t_resp').value||null;
+    if(isGer()&&$('#t_alvo')) rec.data_alvo=$('#t_alvo').value||null;
+    const {data,error}=await sb.from('estudo_etapas').update(rec).eq('id',t.id).select('id');
+    if(error) return toast(error.message,'err');
+    if(!data||!data.length) return toast('Você não tem permissão para alterar esta etapa.','err');
+    closeModal(); toast('Etapa atualizada','ok'); render();
+  };
+}
+
+function horaModal(e,params){
+  openModal(`<div class="modal-h"><h3>Lançar horas · ${esc(e.cliente)}</h3></div><div class="modal-b"><div class="form-grid">
+    <div class="form-grid two">
+      <div class="fg"><label>Data</label><input type="date" id="h_dt" value="${estIso(estHoje())}"></div>
+      <div class="fg"><label>Horas *</label><input type="number" id="h_h" min="0.25" max="24" step="0.25" placeholder="ex.: 1,5"></div>
+    </div>
+    <div class="fg"><label>Etapa</label><select id="h_et">${params.map(p=>`<option value="${p.numero}">${p.numero}. ${esc(p.nome)}</option>`).join('')}</select></div>
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="h_re"> Retrabalho (correção pedida na revisão)</label>
+    <div class="fg"><label>O que foi feito</label><textarea id="h_desc"></textarea></div>
+  </div></div><div class="modal-f"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-primary btn-sm" id="h_save">Lançar</button></div>`);
+  $('#h_save').onclick=async()=>{
+    const h=parseFloat(String($('#h_h').value).replace(',','.'));
+    if(!(h>0&&h<=24)) return toast('Informe as horas (entre 0,25 e 24).','err');
+    const {error}=await sb.from('estudo_horas').insert({estudo_id:e.id,etapa:parseInt($('#h_et').value),data:$('#h_dt').value||estIso(estHoje()),horas:h,retrabalho:$('#h_re').checked,descricao:$('#h_desc').value.trim(),profile_id:state.profile.id});
+    if(error) return toast(error.message,'err');
+    closeModal(); toast('Horas lançadas','ok'); render();
+  };
+}
+
 async function renderSetor(c){
   loadingCard(c);
   const uid=state.profile.id, dep=state.profile.departamento;
