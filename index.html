@@ -1088,6 +1088,7 @@ function gravarModal(r){
         body:JSON.stringify({ resultado_id:r.id, audio_paths:savedPaths })});
       const j=await res.json().catch(()=>({error:'Resposta inválida'}));
       if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
+      if(j&&j.parcial){ setStatus(j.error||'Transcrevi parte do áudio. Toque em "Gerar ata" de novo em alguns minutos — eu continuo de onde parei.'); $('#rec_ata').disabled=false; $('#rec_more').disabled=false; toast('Parte do áudio transcrita — tente gerar a ata de novo em alguns minutos.',''); return; }
       setStatus('Ata gerada! ✅'); toast('Ata gerada com sucesso','ok');
       await apagarAudioResultado(r.id, savedPaths); // ata salva: libera o áudio
       state.resTab='feito'; cleanup(); closeModal(); render();
@@ -1147,6 +1148,7 @@ async function gerarAtaSalvo(r){
       body:JSON.stringify(body)});
     const j=await res.json().catch(()=>({error:'Resposta inválida'}));
     if(!res.ok) throw new Error(j.error||'Falha ao gerar a ata');
+    if(j&&j.parcial){ closeModal(); toast(j.error||'Transcrevi parte do áudio. Toque em "Gerar ata do áudio salvo" de novo em alguns minutos — eu continuo de onde parei.',''); return; }
     await apagarAudioResultado(r.id, (Array.isArray(r.audio_paths)&&r.audio_paths.length)?r.audio_paths:(r.audio_path?[r.audio_path]:[])); // ata salva: libera o áudio
     state.resTab='feito'; closeModal(); toast('Ata gerada! ✅','ok'); render();
   }catch(e){ closeModal(); toast('Erro: '+(e.message||e),'err'); }
